@@ -1,0 +1,18 @@
+# sos-gui desktop entry for system-wide installs.
+# For a per-user install, sos-gui offers to write an equivalent file
+# (with the real executable path) to ~/.local/share/applications/
+# itself on startup; use this copy when packaging or installing the
+# binary onto PATH manually:
+#
+#   install -Dm644 packaging/sos-gui.desktop /usr/share/applications/sos-gui.desktop
+#   install -Dm644 web/static/icons/icon-192x192.png /usr/share/icons/hicolor/192x192/apps/sos-gui.png
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=sos gui
+Comment=Serial over Socket 桌面客户端
+Exec=sos-gui
+Icon=sos-gui
+Terminal=false
+Categories=Utility;Development;
+StartupNotify=true

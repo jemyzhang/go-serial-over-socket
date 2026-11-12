@@ -1,0 +1,16 @@
+*.code-workspace
+sos-client
+sos-server
+
+# Local runtime files: config.json can hold the WebDAV password in plain
+# text, and history.json can contain commands typed at the console. The
+# server prefers a config.json in the working directory, so a stray
+# `git add .` from the repo root could commit live credentials.
+config.json
+history.json
+*.log
+
+# Ensure GitHub workflows are tracked even if global gitignore ignores dotfiles
+!.github/
+!.github/**
+

@@ -1,0 +1,86 @@
+# Builds, vets and tests every PR, and uploads binaries as artifacts so a PR
+# can be tried out before merging. Artifacts are kept for 7 days.
+#
+# Only linux/amd64 is built: sos-server links libudev via cgo, which is
+# Linux-only. (sos-client itself is pure Go and could cross-compile, but
+# only the Linux build is needed.)
+name: PR Build
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  vet-test:
+    name: Vet & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install libudev-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./...
+
+  build:
+    name: Build linux/amd64
+    runs-on: ubuntu-latest
+    needs: vet-test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install libudev-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev
+
+      - name: Build
+        env:
+          CGO_ENABLED: 1
+        run: |
+          PKG="$(go list -m)/pkg/version"
+          VERSION="pr-${{ github.event.pull_request.number }}-${GITHUB_SHA::8}"
+          BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          LDFLAGS="-s -w -X ${PKG}.Version=${VERSION} -X ${PKG}.GitCommit=${{ github.sha }} -X ${PKG}.BuildDate=${BUILD_DATE}"
+          mkdir -p dist
+          echo "Building sos-server (${VERSION})..."
+          go build -ldflags "${LDFLAGS}" -o dist/sos-server ./cmd/server
+          echo "Building sos-client (${VERSION})..."
+          go build -ldflags "${LDFLAGS}" -o dist/sos-client ./cmd/client
+          echo "Building sos-gui (${VERSION})..."
+          go build -ldflags "${LDFLAGS}" -o dist/sos-gui ./cmd/gui
+          echo "--- version banners ---"
+          ./dist/sos-server -v
+          ./dist/sos-client -v
+          ./dist/sos-gui -v
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sos-pr-${{ github.event.pull_request.number }}-linux-amd64
+          path: dist/
+          retention-days: 7

@@ -1,0 +1,80 @@
+name: Release
+
+# Releases are deliberate: pushing a v* tag builds and publishes
+# that version. Ordinary pushes to main never cut a release.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+          cache: true
+
+      - name: Install Linux Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev
+
+      - name: Build Binaries
+        env:
+          NEW_TAG: ${{ github.ref_name }}
+          CGO_ENABLED: 1
+        run: |
+          VERSION="${NEW_TAG}"
+          COMMIT="${{ github.sha }}"
+          BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          PKG="$(go list -m)/pkg/version"
+          LDFLAGS="-s -w -X ${PKG}.Version=${VERSION} -X ${PKG}.GitCommit=${COMMIT} -X ${PKG}.BuildDate=${BUILD_DATE}"
+
+          echo "Building sos-server with version ${VERSION}..."
+          go build -ldflags "${LDFLAGS}" -o dist/sos-server ./cmd/server
+
+          echo "Building sos-client with version ${VERSION}..."
+          go build -ldflags "${LDFLAGS}" -o dist/sos-client ./cmd/client
+
+          echo "Building sos-gui with version ${VERSION}..."
+          go build -ldflags "${LDFLAGS}" -o dist/sos-gui ./cmd/gui
+          ./dist/sos-gui -v | grep -qi "Serial Over Socket" || { echo "sos-gui banner check failed"; exit 1; }
+
+      - name: Package Release Assets
+        run: |
+          mkdir -p package/sos
+          cp dist/sos-server package/sos/
+          cp dist/sos-client package/sos/
+          cp dist/sos-gui package/sos/
+          cp packaging/sos-gui.desktop package/sos/
+          cp sos.service package/sos/
+          cp README.md package/sos/
+          [ -f README_cn.md ] && cp README_cn.md package/sos/ || true
+
+          cd package
+          tar -czvf ../sos-linux-amd64.tar.gz sos/
+          cd ..
+
+          sha256sum sos-linux-amd64.tar.gz > checksums.txt
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            sos-linux-amd64.tar.gz
+            checksums.txt

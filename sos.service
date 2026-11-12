@@ -1,0 +1,21 @@
+[Unit]
+Description=Serial Over Socket Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Optional environment file: uncomment and create /etc/default/sos if needed
+# EnvironmentFile=-/etc/default/sos
+# Default user. Note: user needs read/write permissions for serial devices (e.g. dialout group)
+# User=sos
+ExecStart=/usr/bin/sos-server $SOS_OPTS
+Restart=always
+RestartSec=5
+
+# Sandboxing & security hardening (optional, adjust if needed)
+# ProtectSystem=full
+# ProtectHome=read-only
+
+[Install]
+WantedBy=multi-user.target

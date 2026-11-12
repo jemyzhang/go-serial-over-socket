@@ -1,0 +1,1852 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>{{.Title}}</title>
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#0e131b">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="icon" type="image/png" href="/static/icons/icon-192x192.png">
+    <link rel="apple-touch-icon" href="/static/icons/icon-192x192.png">
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/xterm.min.css">
+    
+    <style>
+        :root {
+            color-scheme: dark;
+            --bg: #0e131b;
+            --bg-surface: #141a24;
+            --bg-card: #18202d;
+            --bg-elevated: #1f293a;
+            --bg-hover: #263347;
+            --text: #f1f5f9;
+            --text-muted: #94a3b8;
+            --text-dim: #64748b;
+            --accent: #ea6645;
+            --accent-hover: #f07a5c;
+            --accent-dim: rgba(234, 102, 69, 0.15);
+            --accent-glow: 0 0 16px rgba(234, 102, 69, 0.35);
+            --secondary: #48dbfb;
+            --secondary-dim: rgba(72, 219, 251, 0.15);
+            --success: #10b981;
+            --success-dim: rgba(16, 185, 129, 0.15);
+            --danger: #f43f5e;
+            --danger-dim: rgba(244, 63, 94, 0.15);
+            --warning: #f59e0b;
+            --border: rgba(255, 255, 255, 0.08);
+            --border-hover: rgba(255, 255, 255, 0.16);
+            --border-active: rgba(234, 102, 69, 0.6);
+            --radius-sm: 6px;
+            --radius: 10px;
+            --radius-lg: 14px;
+            --sidebar-w: 240px;
+            --sidebar-collapsed-w: 80px;
+            --tab-h: 44px;
+            --scrollbar-thumb: #334155;
+            --scrollbar-thumb-hover: #475569;
+            --scrollbar-track: rgba(14, 19, 27, 0.6);
+        }
+
+        [data-theme="light"] {
+            color-scheme: light;
+            --bg: #f1f5f9;
+            --bg-surface: #ffffff;
+            --bg-card: #ffffff;
+            --bg-elevated: #f8fafc;
+            --bg-hover: #e2e8f0;
+            --text: #0f172a;
+            --text-muted: #64748b;
+            --text-dim: #94a3b8;
+            --border: rgba(0, 0, 0, 0.08);
+            --border-hover: rgba(0, 0, 0, 0.15);
+            --border-active: rgba(234, 102, 69, 0.6);
+            --scrollbar-thumb: #cbd5e1;
+            --scrollbar-thumb-hover: #94a3b8;
+            --scrollbar-track: rgba(241, 245, 249, 0.8);
+        }
+
+        /* Scrollbars */
+        * {
+            scrollbar-width: thin;
+            scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: var(--scrollbar-track); border-radius: 999px; }
+        ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 999px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+            display: flex;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        button, input, select, textarea {
+            font-family: inherit;
+            color: inherit;
+            border: none;
+            background: none;
+            outline: none;
+        }
+
+        /* Root Application Layout */
+        .app-container {
+            display: flex;
+            width: 100%;
+            height: 100%;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* ============================================================
+           Metacube XD Sidebar
+           ============================================================ */
+        .sidebar {
+            width: var(--sidebar-w);
+            background: var(--bg-surface);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+            transition: width 0.26s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 20;
+            overflow: hidden;
+        }
+
+        .sidebar.collapsed {
+            width: var(--sidebar-collapsed-w);
+        }
+
+        .sidebar-inner {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            width: var(--sidebar-w);
+            padding: 16px 12px;
+            gap: 16px;
+        }
+
+        .sidebar.collapsed .sidebar-inner {
+            width: var(--sidebar-collapsed-w);
+            padding: 16px 12px;
+            align-items: center;
+            gap: 12px;
+        }
+
+        /* Brand & Collapse Header */
+        .sidebar-brand-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 40px;
+            padding: 0 4px;
+        }
+
+        .sidebar.collapsed .sidebar-brand-row {
+            width: 100%;
+            justify-content: center;
+            padding: 0;
+        }
+
+        .sidebar-brand {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 700;
+            font-size: 13.5px;
+            letter-spacing: -0.2px;
+            color: var(--accent);
+            text-decoration: none;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .brand-icon {
+            width: 30px;
+            height: 30px;
+            min-width: 30px;
+            background: var(--accent-dim);
+            border: 1px solid var(--border-active);
+            border-radius: var(--radius-sm);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--accent);
+            box-shadow: var(--accent-glow);
+        }
+
+        .brand-text {
+            font-weight: 700;
+            background: linear-gradient(135deg, #f07a5c, #ea6645);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .sidebar.collapsed .sidebar-brand {
+            display: none;
+        }
+
+        .sidebar.collapsed .brand-text {
+            display: none;
+        }
+
+        .collapse-btn {
+            padding: 3px 6px;
+            font-size: 11px;
+            color: var(--text-dim);
+            cursor: pointer;
+            border-radius: var(--radius-sm);
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            white-space: nowrap;
+        }
+
+        .collapse-btn:hover {
+            color: var(--text);
+            background: var(--bg-hover);
+        }
+
+        .sidebar.collapsed .collapse-btn {
+            display: none;
+        }
+
+        .collapsed-expand-btn {
+            display: none;
+            width: 32px;
+            height: 32px;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+            cursor: pointer;
+            border-radius: var(--radius-sm);
+        }
+
+        .sidebar.collapsed .collapsed-expand-btn {
+            display: flex;
+            width: 100%;
+            height: 40px;
+            border-radius: var(--radius);
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            transition: all 0.2s ease;
+        }
+
+        .sidebar.collapsed .collapsed-expand-btn:hover {
+            background: var(--bg-hover);
+            border-color: var(--border-hover);
+            color: var(--text);
+        }
+
+        .sidebar.collapsed .collapsed-expand-btn svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        /* Metacube Connection Status Pill */
+        .sidebar-status-pill {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-muted);
+            transition: all 0.2s ease;
+        }
+
+        .sidebar.collapsed .sidebar-status-pill {
+            width: 100%;
+            height: 36px;
+            padding: 0;
+            justify-content: center;
+            align-items: center;
+            border-radius: var(--radius);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            min-width: 8px;
+            border-radius: 50%;
+            background: var(--danger);
+            box-shadow: 0 0 6px var(--danger);
+            transition: all 0.3s ease;
+        }
+
+        .status-dot.connected {
+            background: var(--success);
+            box-shadow: 0 0 8px var(--success);
+            /* No infinite animation here on purpose: a permanently
+               running CSS animation keeps webview compositors (esp.
+               WebKitGTK in sos-gui) redrawing the full window at
+               frame rate even when nothing changes. */
+        }
+
+        @keyframes pulse-dot {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.15); opacity: 0.7; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        .status-text {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .sidebar.collapsed .status-text {
+            display: none;
+        }
+
+        /* Sidebar Navigation Items */
+        .sidebar-nav {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            flex: 1;
+        }
+
+        .sidebar.collapsed .sidebar-nav {
+            width: 100%;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 12px;
+            border-radius: var(--radius);
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: all 0.18s ease;
+            position: relative;
+            text-decoration: none;
+            border: 1px solid transparent;
+        }
+
+        .sidebar.collapsed .nav-item {
+            width: 100%;
+            height: 48px;
+            padding: 0;
+            margin: 0;
+            justify-content: center;
+            align-items: center;
+            border-radius: 12px;
+        }
+
+        .nav-item:hover {
+            color: var(--text);
+            background: var(--bg-hover);
+        }
+
+        .nav-item.active {
+            color: #ffffff;
+            background: linear-gradient(90deg, rgba(234, 102, 69, 0.16) 0%, rgba(234, 102, 69, 0.04) 100%);
+            border-color: rgba(234, 102, 69, 0.3);
+            font-weight: 600;
+        }
+
+        .nav-item.active::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 6px;
+            bottom: 6px;
+            width: 3px;
+            border-radius: 0 3px 3px 0;
+            background: var(--accent);
+            box-shadow: var(--accent-glow);
+        }
+
+        .sidebar.collapsed .nav-item.active {
+            background: linear-gradient(135deg, rgba(234, 102, 69, 0.24) 0%, rgba(234, 102, 69, 0.08) 100%);
+            border: 1.5px solid rgba(234, 102, 69, 0.6);
+            box-shadow: 0 4px 16px rgba(234, 102, 69, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+        }
+
+        .sidebar.collapsed .nav-item.active::before {
+            display: none !important;
+        }
+
+        .nav-icon {
+            width: 20px;
+            height: 20px;
+            min-width: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: inherit;
+            transition: transform 0.18s ease;
+        }
+
+        .nav-icon svg {
+            width: 18px;
+            height: 18px;
+            fill: currentColor;
+        }
+
+        .sidebar.collapsed .nav-icon {
+            width: 26px;
+            height: 26px;
+            min-width: 26px;
+        }
+
+        .sidebar.collapsed .nav-icon svg {
+            width: 24px;
+            height: 24px;
+        }
+
+        .nav-item.active .nav-icon {
+            color: var(--accent);
+        }
+
+        .sidebar.collapsed .nav-item.active .nav-icon {
+            color: var(--accent);
+            filter: drop-shadow(0 0 6px rgba(234, 102, 69, 0.6));
+        }
+
+        .sidebar.collapsed .nav-item:hover .nav-icon {
+            transform: scale(1.08);
+        }
+
+        .nav-label {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            flex: 1;
+        }
+
+        .sidebar.collapsed .nav-label {
+            display: none;
+        }
+
+        .nav-badge {
+            font-size: 11px;
+            padding: 2px 6px;
+            border-radius: 999px;
+            background: var(--bg-elevated);
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+        }
+
+        .nav-item.active .nav-badge {
+            background: var(--accent-dim);
+            color: var(--accent);
+            border-color: var(--border-active);
+        }
+
+        .sidebar.collapsed .nav-badge {
+            display: none !important;
+        }
+
+        /* Sidebar Action Buttons & Footer */
+        .sidebar-bottom-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            border-top: 1px solid var(--border);
+            padding-top: 12px;
+        }
+
+        .sidebar.collapsed .sidebar-bottom-actions {
+            width: 100%;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .sidebar-action-btn {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            border-radius: var(--radius);
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-muted);
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            cursor: pointer;
+            transition: all 0.2s;
+            width: 100%;
+        }
+
+        .sidebar.collapsed .sidebar-action-btn {
+            width: 100%;
+            height: 42px;
+            padding: 0;
+            justify-content: center;
+            align-items: center;
+            border-radius: var(--radius);
+        }
+
+        .sidebar-action-btn:hover {
+            color: var(--text);
+            border-color: var(--border-hover);
+            background: var(--bg-hover);
+        }
+
+        .sidebar.collapsed .sidebar-action-btn svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        .sidebar-action-btn span {
+            white-space: nowrap;
+        }
+
+        .sidebar.collapsed .sidebar-action-btn span {
+            display: none;
+        }
+
+        .sidebar-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-top: 8px;
+            font-size: 11px;
+            color: var(--text-dim);
+        }
+
+        .sidebar.collapsed .sidebar-footer {
+            width: 100%;
+            align-items: center;
+            justify-content: center;
+            padding-top: 8px;
+        }
+
+        .sidebar.collapsed #themeToggle {
+            width: 100%;
+            height: 38px;
+            border-radius: var(--radius);
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .sidebar.collapsed #themeToggle svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        .footer-version {
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+        }
+
+        .sidebar.collapsed .footer-version {
+            display: none;
+        }
+
+        /* ============================================================
+           Main Content Area & Views
+           ============================================================ */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            height: 100%;
+            position: relative;
+            background: var(--bg);
+        }
+
+        .view-panel {
+            display: none;
+            flex-direction: column;
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            inset: 0;
+            overflow: hidden;
+        }
+
+        .view-panel.active {
+            display: flex;
+        }
+
+        /* Scrollable Container for Non-Terminal Views */
+        .view-scrollable {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .view-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 4px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .view-title-group h2 {
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: -0.4px;
+            color: var(--text);
+        }
+
+        .view-title-group p {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .view-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        /* Metacube Buttons */
+        .btn {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 7px 14px;
+            border-radius: var(--radius);
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            white-space: nowrap;
+        }
+
+        .btn:hover:not(:disabled) {
+            background: var(--bg-hover);
+            border-color: var(--border-hover);
+        }
+
+        .btn.primary {
+            background: var(--accent);
+            color: #ffffff;
+            border-color: var(--accent);
+            font-weight: 600;
+        }
+
+        .btn.primary:hover:not(:disabled) {
+            background: var(--accent-hover);
+            box-shadow: var(--accent-glow);
+        }
+
+        .btn.danger {
+            background: var(--danger-dim);
+            color: var(--danger);
+            border-color: rgba(244, 63, 94, 0.3);
+        }
+
+        .btn.danger:hover:not(:disabled) {
+            background: var(--danger);
+            color: #ffffff;
+        }
+
+        .btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+
+        .icon-btn {
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            color: var(--text-muted);
+            border: 1px solid transparent;
+            transition: all 0.18s;
+            background: transparent;
+        }
+
+        .icon-btn:hover {
+            background: var(--bg-hover);
+            color: var(--text);
+            border-color: var(--border);
+        }
+
+        /* Metacube Card Styling */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+            transition: border-color 0.2s ease;
+        }
+
+        .card:hover {
+            border-color: var(--border-hover);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 12px;
+        }
+
+        .card-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* Form Controls */
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .form-group label {
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-muted);
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 12px;
+        }
+
+        .input, .select {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            padding: 8px 12px;
+            border-radius: var(--radius);
+            font-size: 13px;
+            width: 100%;
+            color: var(--text);
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .input:focus, .select:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px var(--accent-dim);
+        }
+
+        /* Native <select> rendering differs per engine: Chrome honors the
+           background/color above, but WebKitGTK (the desktop app's webview)
+           paints the closed control with the light GTK theme while keeping
+           our light text — white on white. Drop the native appearance in
+           every engine and draw our own chevron for a consistent control. */
+        .select {
+            appearance: none;
+            -webkit-appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            padding-right: 32px;
+        }
+
+        .select option {
+            background: var(--bg-elevated);
+            color: var(--text);
+        }
+
+        /* ============================================================
+           Terminal View Elements
+           ============================================================ */
+        .terminal-header-bar {
+            height: var(--tab-h);
+            background: var(--bg-surface);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+            padding: 0 8px 0 0;
+            z-index: 10;
+        }
+
+        .tabs-scroll {
+            flex: 1;
+            display: flex;
+            overflow-x: auto;
+            height: 100%;
+            align-items: center;
+            scrollbar-width: none;
+        }
+
+        .tabs-scroll::-webkit-scrollbar { display: none; }
+
+        .port-tab {
+            height: 100%;
+            padding: 0 16px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            border-right: 1px solid var(--border);
+            border-bottom: 2px solid transparent;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-muted);
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s;
+            background: transparent;
+        }
+
+        .port-tab:hover {
+            background: var(--bg-hover);
+            color: var(--text);
+        }
+
+        .port-tab.active {
+            color: #ffffff;
+            background: var(--bg-card);
+            border-bottom-color: var(--accent);
+            font-weight: 600;
+        }
+
+        .tab-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--text-dim);
+        }
+
+        .tab-dot.connected {
+            background: var(--success);
+            box-shadow: 0 0 6px var(--success);
+        }
+
+        .tab-dot.disconnected {
+            background: var(--danger);
+        }
+
+        .tab-dot.connecting {
+            background: var(--warning);
+            /* Finite on purpose (see .status-dot.connected): pulses
+               while a connect attempt settles, then rests. */
+            animation: pulse-dot 1.5s ease-in-out 8;
+        }
+
+        .tab-port-id {
+            font-size: 11px;
+            color: var(--text-dim);
+            margin-left: 2px;
+        }
+
+        .terminal-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding-left: 8px;
+        }
+
+        #logIndicator {
+            display: none;
+            align-items: center;
+            gap: 6px;
+            padding: 3px 10px;
+            background: var(--success-dim);
+            border: 1px solid var(--success);
+            border-radius: 999px;
+            font-size: 11px;
+            color: var(--success);
+        }
+
+        #logIndicator.active { display: flex; }
+
+        /* Terminals Wrapper */
+        .terminals-wrapper {
+            flex: 1;
+            position: relative;
+            background: #000000;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        .terminal-pane {
+            display: none;
+            flex-direction: column;
+            flex: 1;
+            min-height: 0;
+            background: #000000;
+            padding: 4px;
+        }
+
+        .terminal-pane.active { display: flex; }
+        .xterm-host { flex: 1; position: relative; min-height: 0; }
+
+        #emptyState {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+            gap: 16px;
+            z-index: 5;
+            background: var(--bg);
+        }
+
+        /* Metacube Command Bar */
+        .cmd-bar {
+            background: var(--bg-surface);
+            border-top: 1px solid var(--border);
+            padding: 10px 16px;
+            display: flex;
+            align-items: flex-end;
+            gap: 12px;
+            position: relative;
+            z-index: 10;
+        }
+
+        .cmd-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding-bottom: 8px;
+            font-size: 12px;
+            color: var(--text-muted);
+            min-width: 110px;
+        }
+
+        .cmd-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--text-dim);
+        }
+
+        .cmd-dot.connected {
+            background: var(--success);
+            box-shadow: 0 0 6px var(--success);
+        }
+
+        .cmd-input-wrapper {
+            flex: 1;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #terminalInput {
+            width: 100%;
+            min-height: 40px;
+            max-height: 140px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 9px 12px;
+            font-size: 13px;
+            font-family: 'JetBrains Mono', monospace;
+            resize: none;
+            overflow-y: auto;
+            color: var(--text);
+            line-height: 1.4;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        #terminalInput:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px var(--accent-dim);
+        }
+
+        #historyDropdown {
+            position: absolute;
+            bottom: 100%;
+            left: 0;
+            right: 0;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-active);
+            border-radius: var(--radius) var(--radius) 0 0;
+            margin-bottom: 4px;
+            max-height: 220px;
+            overflow-y: auto;
+            display: none;
+            box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.4);
+            z-index: 100;
+        }
+
+        #historyDropdown.active { display: block; }
+
+        .history-item {
+            padding: 8px 12px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            cursor: pointer;
+            border-bottom: 1px solid var(--border);
+            color: var(--text);
+            transition: background 0.15s, color 0.15s;
+        }
+
+        .history-item:last-child { border-bottom: none; }
+        .history-item:hover, .history-item.selected {
+            background: var(--accent-dim);
+            color: var(--accent);
+            border-left: 3px solid var(--accent);
+            padding-left: 9px;
+        }
+
+        /* Search Overlay */
+        #searchBar {
+            position: absolute;
+            top: 10px;
+            right: 14px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-active);
+            border-radius: var(--radius);
+            padding: 6px 10px;
+            display: none;
+            align-items: center;
+            gap: 8px;
+            z-index: 50;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+        }
+
+        #searchInput {
+            width: 160px;
+            padding: 4px 8px;
+            font-size: 12px;
+        }
+
+        /* ============================================================
+           Ports View Cards Grid
+           ============================================================ */
+        .ports-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 16px;
+        }
+
+        .port-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .port-card:hover {
+            border-color: var(--border-hover);
+        }
+
+        .port-card.active-port {
+            border-color: var(--border-active);
+            box-shadow: var(--accent-glow);
+        }
+
+        .port-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .port-card-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+            font-size: 15px;
+        }
+
+        .port-card-sub {
+            font-size: 12px;
+            color: var(--text-dim);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .port-status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 3px 8px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 500;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+        }
+
+        .port-status-badge.connected {
+            color: var(--success);
+            background: var(--success-dim);
+            border-color: rgba(16, 185, 129, 0.3);
+        }
+
+        .port-status-badge.disconnected {
+            color: var(--danger);
+            background: var(--danger-dim);
+            border-color: rgba(244, 63, 94, 0.3);
+        }
+
+        .port-card-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 4px;
+        }
+
+        /* ============================================================
+           History View List
+           ============================================================ */
+        .history-card-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .history-card-item {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            transition: all 0.2s;
+        }
+
+        .history-card-item:hover {
+            border-color: var(--border-hover);
+            background: var(--bg-hover);
+        }
+
+        .history-cmd-text {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            color: var(--text);
+            word-break: break-all;
+            flex: 1;
+        }
+
+        .history-item-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        /* ============================================================
+           Modals & Overlays
+           ============================================================ */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.65);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 20px;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-hover);
+            border-radius: var(--radius-lg);
+            width: 100%;
+            max-width: 520px;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+            overflow: hidden;
+        }
+
+        .modal-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .modal-title { font-weight: 600; font-size: 15px; }
+        .modal-body { padding: 20px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 14px; }
+        .modal-footer {
+            padding: 14px 20px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            background: var(--bg-elevated);
+        }
+
+        /* Toasts */
+        #toastContainer {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 9999;
+            pointer-events: none;
+        }
+
+        .toast {
+            background: var(--bg-card);
+            border: 1px solid var(--border-hover);
+            border-left: 4px solid var(--accent);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+            padding: 12px 18px;
+            border-radius: var(--radius);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-width: 260px;
+            pointer-events: auto;
+            transform: translateX(120%);
+            transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .toast.show { transform: translateX(0); }
+        .toast.hiding { transform: translateX(120%); }
+        .toast.success { border-left-color: var(--success); }
+        .toast.error { border-left-color: var(--danger); }
+        .toast.warning { border-left-color: var(--warning); }
+        .toast.info { border-left-color: var(--accent); }
+        .toast-icon { font-size: 16px; font-weight: bold; }
+        .toast-content { flex: 1; font-size: 13px; color: var(--text); }
+
+        /* PWA Banner */
+        #pwaUpdateBanner {
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            background: var(--accent);
+            color: #ffffff;
+            padding: 8px 20px;
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+            z-index: 10000;
+            font-weight: 500;
+            font-size: 13px;
+        }
+
+        /* SVGs */
+        svg { width: 1.1em; height: 1.1em; fill: currentColor; }
+    </style>
+</head>
+<body>
+
+    <div id="pwaUpdateBanner">
+        <div>发现新版本可用！</div>
+        <div style="display: flex; gap: 8px;">
+            <button id="pwaUpdateNowBtn" class="btn" style="background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 4px 12px;">更新</button>
+            <button onclick="pwaDismissBanner()" class="btn" style="background: transparent; border: none; color: #fff; padding: 4px;">✕</button>
+        </div>
+    </div>
+
+    <div class="app-container">
+        <!-- Metacube XD Left Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-inner">
+                <!-- Brand & Collapse Header -->
+                <div class="sidebar-brand-row">
+                    <div class="sidebar-brand" title="SerialOverSocket">
+                        <div class="brand-icon">
+                            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="6" width="18" height="12" rx="3"/>
+                                <circle cx="7.5" cy="10" r="1" fill="currentColor"/>
+                                <circle cx="12" cy="10" r="1" fill="currentColor"/>
+                                <circle cx="16.5" cy="10" r="1" fill="currentColor"/>
+                                <circle cx="9.5" cy="14" r="1" fill="currentColor"/>
+                                <circle cx="14.5" cy="14" r="1" fill="currentColor"/>
+                            </svg>
+                        </div>
+                        <span class="brand-text">SerialOverSocket</span>
+                    </div>
+                    <button class="collapse-btn" onclick="toggleSidebar()" title="收起侧边栏">
+                        <span>« 收起</span>
+                    </button>
+                    <button class="collapsed-expand-btn" onclick="toggleSidebar()" title="展开侧边栏">
+                        <svg viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+                    </button>
+                </div>
+
+                <!-- Connection Status Pill -->
+                <div class="sidebar-status-pill" id="sidebarStatusPill" title="服务连接状态">
+                    <div class="status-dot" id="wsDot"></div>
+                    <span class="status-text" id="wsStatusText">未连接</span>
+                </div>
+
+                <!-- Navigation Tabs -->
+                <nav class="sidebar-nav">
+                    <button class="nav-item active" data-view="terminal" onclick="switchView('terminal')" title="终端">
+                        <div class="nav-icon">
+                            <svg viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V8h16v10zm-12-3l3.5-3.5L8 8l1.41-1.41L14.33 11.5 9.41 16.41 8 15zm7 0h4v2h-4v-2z"/></svg>
+                        </div>
+                        <span class="nav-label">终端工作区</span>
+                        <span class="nav-badge" id="navTerminalBadge" style="display:none;"></span>
+                    </button>
+
+                    <button class="nav-item" data-view="ports" onclick="switchView('ports')" title="端口管理">
+                        <div class="nav-icon">
+                            <svg viewBox="0 0 24 24"><path d="M16 7V3h-2v4h-4V3H8v4H6c-1.1 0-2 .9-2 2v5c0 3.31 2.69 6 6 6v3h4v-3c3.31 0 6-2.69 6-6V9c0-1.1-.9-2-2-2h-2zm0 7c0 2.21-1.79 4-4 4s-4-1.79-4-4V9h8v5z"/></svg>
+                        </div>
+                        <span class="nav-label">端口管理</span>
+                        <span class="nav-badge" id="navPortsBadge">0</span>
+                    </button>
+
+                    <button class="nav-item" data-view="history" onclick="switchView('history')" title="命令历史">
+                        <div class="nav-icon">
+                            <svg viewBox="0 0 24 24"><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
+                        </div>
+                        <span class="nav-label">命令历史</span>
+                        <span class="nav-badge" id="navHistoryBadge">0</span>
+                    </button>
+
+                    <button class="nav-item" data-view="webdav" onclick="switchView('webdav')" title="WebDAV 同步">
+                        <div class="nav-icon">
+                            <svg viewBox="0 0 24 24"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM19 18H6c-2.21 0-4-1.79-4-4 0-2.05 1.53-3.76 3.56-3.97l1.07-.11.5-.95C8.08 7.14 9.94 6 12 6c2.62 0 4.88 1.86 5.39 4.43l.3 1.5 1.53.11c1.56.1 2.78 1.41 2.78 2.96 0 1.65-1.35 3-3 3z"/></svg>
+                        </div>
+                        <span class="nav-label">WebDAV 同步</span>
+                    </button>
+
+                    <button class="nav-item" data-view="settings" onclick="switchView('settings')" title="设置">
+                        <div class="nav-icon">
+                            <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+                        </div>
+                        <span class="nav-label">系统设置</span>
+                    </button>
+                </nav>
+
+                <!-- Sidebar Bottom Actions -->
+                <div class="sidebar-bottom-actions">
+                    <button class="sidebar-action-btn" onclick="refreshPorts()" title="刷新端口列表">
+                        <svg viewBox="0 0 24 24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+                        <span>刷新端口</span>
+                    </button>
+                    <button class="sidebar-action-btn" onclick="reconnectWebSocket()" title="重新连接 WebSocket 服务">
+                        <svg viewBox="0 0 24 24"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>
+                        <span>重连服务</span>
+                    </button>
+                </div>
+
+                <!-- Sidebar Footer -->
+                <div class="sidebar-footer">
+                    <button id="themeToggle" class="icon-btn" onclick="toggleTheme()" title="切换明暗主题">
+                        <svg viewBox="0 0 24 24"><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"/></svg>
+                    </button>
+                    <span class="footer-version">{{.Version}}</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Workspace -->
+        <main class="main-content">
+            <!-- ============================================================
+                 View 1: Terminal Workspace
+                 ============================================================ -->
+            <section id="viewTerminal" class="view-panel active">
+                <!-- Top Tabs & Actions -->
+                <div class="terminal-header-bar">
+                    <div class="tabs-scroll" id="tabsScroll"></div>
+                    <div class="terminal-actions">
+                        <div id="logIndicator">
+                            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/></svg>
+                            <span id="logFilename"></span>
+                            <span id="logSize" style="font-size:10px; opacity:0.8;"></span>
+                        </div>
+                        <button class="icon-btn" onclick="showAddPortModal()" title="添加自定义端口">
+                            <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+                        </button>
+                        <button class="icon-btn" onclick="clearTerminal()" title="清屏">
+                            <svg viewBox="0 0 24 24"><path d="M15 16h4v2h-4zm0-8h7v2h-7zm0 4h6v2h-6zM3 18c0 1.1.9 2 2 2h6c1.1 0 2-.9 2-2V8H3v10zM14 5h-3l-1-1H6L5 5H2v2h12z"/></svg>
+                        </button>
+                        <button class="icon-btn" onclick="toggleSearch()" title="搜索内容">
+                            <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+                        </button>
+                        <button id="logBtn" class="icon-btn" onclick="toggleLogging()" title="开始/停止日志录制">
+                            <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
+                        </button>
+                        <button class="icon-btn" onclick="saveTerminalContent()" title="导出输出内容">
+                            <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- In-Terminal Search Overlay -->
+                <div id="searchBar">
+                    <input type="text" id="searchInput" class="input" placeholder="在终端中查找..." onkeydown="handleSearchKey(event)">
+                    <span id="searchResultCount" style="font-size:11px; color:var(--text-muted);"></span>
+                    <button class="icon-btn" onclick="findPrev()"><svg viewBox="0 0 24 24"><path d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z"/></svg></button>
+                    <button class="icon-btn" onclick="findNext()"><svg viewBox="0 0 24 24"><path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/></svg></button>
+                    <button class="icon-btn" onclick="closeSearch()"><svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>
+                </div>
+
+                <!-- Host for xterm panes -->
+                <div class="terminals-wrapper" id="terminalsWrapper">
+                    <div id="emptyState">
+                        <svg viewBox="0 0 24 24" style="font-size: 52px; opacity: 0.35;"><path d="M4 6h18V4H4c-1.1 0-2 .9-2 2v11H0v3h14v-3H4V6zm19 2h-6c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h6c.55 0 1-.45 1-1V9c0-.55-.45-1-1-1zm-1 9h-4v-7h4v7z"/></svg>
+                        <div style="font-size:14px;">暂无可用的终端端口</div>
+                        <button class="btn primary" onclick="switchView('ports')">前往端口管理连接串口</button>
+                    </div>
+                </div>
+
+                <!-- Bottom Command Input Bar -->
+                <div class="cmd-bar">
+                    <div class="cmd-status" title="当前终端端口">
+                        <div id="cmdDot" class="cmd-dot"></div>
+                        <span id="cmdPortLabel" style="font-family:'JetBrains Mono', monospace; font-size:12px; font-weight:600;">None</span>
+                    </div>
+                    <div class="cmd-input-wrapper">
+                        <div id="historyDropdown"></div>
+                        <textarea id="terminalInput" placeholder="输入命令，Enter 发送，Shift+Enter 换行，↑/↓ 联想历史..." onkeydown="handleTerminalInput(event)" oninput="autoResizeTextarea()" rows="1"></textarea>
+                    </div>
+                    <div style="display:flex; gap:8px;">
+                        <button class="btn primary" onclick="sendTerminalInput()" title="发送命令">
+                            <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                            <span>发送</span>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ============================================================
+                 View 2: Ports Management
+                 ============================================================ -->
+            <section id="viewPorts" class="view-panel">
+                <div class="view-scrollable">
+                    <div class="view-header">
+                        <div class="view-title-group">
+                            <h2>端口管理</h2>
+                            <p>管理系统识别的串行硬件端口、参数配置与连接状态</p>
+                        </div>
+                        <div class="view-actions">
+                            <button class="btn" onclick="refreshPorts()">
+                                <svg viewBox="0 0 24 24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+                                刷新设备
+                            </button>
+                            <button class="btn primary" onclick="showAddPortModal()">
+                                <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+                                添加端口
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Ports Cards Grid -->
+                    <div class="ports-grid" id="portsCardGrid">
+                        <!-- Rendered by JS: renderPortsView() -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- ============================================================
+                 View 3: Command History
+                 ============================================================ -->
+            <section id="viewHistory" class="view-panel">
+                <div class="view-scrollable">
+                    <div class="view-header">
+                        <div class="view-title-group">
+                            <h2>命令历史</h2>
+                            <p>检索、复用、编辑以及导入导出历史发送记录</p>
+                        </div>
+                        <div class="view-actions">
+                            <button class="btn" onclick="exportHistory()">
+                                <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+                                导出 JSON
+                            </button>
+                            <button class="btn" onclick="document.getElementById('importFileInput').click()">
+                                <svg viewBox="0 0 24 24"><path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/></svg>
+                                导入 JSON
+                            </button>
+                            <button class="btn danger" onclick="clearHistory()">
+                                <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                                清空历史
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- History Search Bar -->
+                    <div class="card" style="padding: 12px 16px;">
+                        <input type="text" id="historySearchInput" class="input" placeholder="输入关键字搜索历史命令..." oninput="filterHistoryView(this.value)">
+                    </div>
+
+                    <!-- History Items List -->
+                    <div class="history-card-list" id="historyListView">
+                        <!-- Rendered by JS: renderHistoryView() -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- ============================================================
+                 View 4: WebDAV Cloud Sync
+                 ============================================================ -->
+            <section id="viewWebDAV" class="view-panel">
+                <div class="view-scrollable">
+                    <div class="view-header">
+                        <div class="view-title-group">
+                            <h2>WebDAV 同步</h2>
+                            <p>跨多设备云端备份与还原命令历史及配置</p>
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 20px;">
+                        <!-- WebDAV Configuration Card -->
+                        <div class="card">
+                            <div class="card-header">
+                                <span class="card-title">
+                                    <svg viewBox="0 0 24 24" width="16" height="16" style="color:var(--accent);"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/></svg>
+                                    WebDAV 服务器设置
+                                </span>
+                            </div>
+                            <div class="form-group">
+                                <label>服务器 URL</label>
+                                <input type="text" id="webdavUrl" class="input" placeholder="https://dav.example.com/serial-over-socket/">
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>用户名</label>
+                                    <input type="text" id="webdavUsername" class="input" placeholder="username">
+                                </div>
+                                <div class="form-group">
+                                    <label>密码 / Token</label>
+                                    <input type="password" id="webdavPassword" class="input" placeholder="••••••••">
+                                    <div style="font-size:11px; opacity:0.65; margin-top:2px;">留空则保持已保存的密码 <a href="javascript:void(0)" onclick="clearWebDAVPassword()" style="color:inherit;">清除已保存密码</a></div>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>自动备份周期 (分钟)</label>
+                                    <input type="number" id="webdavInterval" class="input" value="60" min="5">
+                                </div>
+                                <div class="form-group">
+                                    <label>保留备份版本数</label>
+                                    <input type="number" id="webdavMaxBackups" class="input" value="10" min="1" max="50">
+                                </div>
+                            </div>
+                            <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:8px;">
+                                <button class="btn primary" onclick="saveWebDAVConfig()">保存配置</button>
+                                <button id="webdavTestBtn" class="btn" onclick="testWebDAVConnection()">测试连接</button>
+                                <button class="btn" onclick="performWebDAVBackup(false)">立即备份</button>
+                            </div>
+                            <div id="webdavTestStatus" style="font-size:12px; margin-top:4px;"></div>
+                        </div>
+
+                        <!-- WebDAV Remote Backups Card -->
+                        <div class="card">
+                            <div class="card-header">
+                                <span class="card-title">
+                                    <svg viewBox="0 0 24 24" width="16" height="16" style="color:var(--secondary);"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12z"/></svg>
+                                    云端备份列表
+                                </span>
+                                <div style="display:flex; gap:8px; align-items:center;">
+                                    <span id="webdavLastBackup" style="font-size:11px; color:var(--text-dim);"></span>
+                                    <button class="icon-btn" onclick="refreshWebDAVFileList()" title="刷新云端列表">
+                                        <svg viewBox="0 0 24 24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="webdavFileList" style="min-height:160px; max-height:300px; overflow-y:auto; display:flex; flex-direction:column; gap:8px;">
+                                <div style="padding:20px; text-align:center; color:var(--text-muted); font-size:13px;">点击刷新按钮加载远程备份</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ============================================================
+                 View 5: System & Terminal Settings
+                 ============================================================ -->
+            <section id="viewSettings" class="view-panel">
+                <div class="view-scrollable">
+                    <div class="view-header">
+                        <div class="view-title-group">
+                            <h2>系统设置</h2>
+                            <p>自定义终端字体、配色主题、缓冲区及运行选项</p>
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 20px;">
+                        <!-- Terminal Appearance Card -->
+                        <div class="card">
+                            <div class="card-header">
+                                <span class="card-title">
+                                    <svg viewBox="0 0 24 24" width="16" height="16" style="color:var(--accent);"><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"/></svg>
+                                    终端外观定制
+                                </span>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>终端配色</label>
+                                    <select id="terminalTheme" class="select" onchange="updateTerminalSettings()">
+                                        <option value="dark" selected>Metacube Dark (玄青深色)</option>
+                                        <option value="light">Light (纯白清爽)</option>
+                                        <option value="blue">Midnight Blue (深海蓝)</option>
+                                        <option value="green">Hacker Matrix (极客绿)</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>代码字体</label>
+                                    <select id="terminalFontFamily" class="select" onchange="updateTerminalSettings()">
+                                        <option value="'JetBrains Mono', monospace" selected>JetBrains Mono</option>
+                                        <option value="'Fira Code', monospace">Fira Code</option>
+                                        <option value="'Monaco', 'Menlo', monospace">Monaco / Menlo</option>
+                                        <option value="'Courier New', monospace">Courier New</option>
+                                        <option value="Consolas, monospace">Consolas</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label style="display:flex; justify-content:space-between;">
+                                    <span>字号大小</span>
+                                    <span id="fontSizeValue" style="font-weight:600; color:var(--accent);">14px</span>
+                                </label>
+                                <input type="range" id="terminalFontSize" min="11" max="22" value="14" style="accent-color:var(--accent);">
+                            </div>
+                            <div class="form-group">
+                                <label>最大回滚行数 (Scrollback)</label>
+                                <input type="number" id="scrollbackLines" class="input" value="10000" min="1000" step="1000" onchange="updateTerminalSettings()">
+                            </div>
+                        </div>
+
+                        <!-- Communication & Behavior Card -->
+                        <div class="card">
+                            <div class="card-header">
+                                <span class="card-title">
+                                    <svg viewBox="0 0 24 24" width="16" height="16" style="color:var(--secondary);"><path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>
+                                    交互与发送选项
+                                </span>
+                            </div>
+                            <div class="form-group">
+                                <label>发送换行符 (Line Ending)</label>
+                                <select id="lineEndingSelect" class="select" onchange="updateLineEnding(this.value)">
+                                    <option value="\r\n" selected>CRLF (\r\n) - Windows / 标准串口</option>
+                                    <option value="\n">LF (\n) - Unix / Linux 标准</option>
+                                    <option value="\r">CR (\r) - 经典回车</option>
+                                    <option value="">RAW - 不附加任何换行</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin-top:8px;">
+                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                                    <input type="checkbox" id="autoScrollCheck" checked style="accent-color:var(--accent);">
+                                    <span>接收到新数据时自动滚动到末尾</span>
+                                </label>
+                            </div>
+                            <div class="form-group">
+                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                                    <input type="checkbox" id="copyOnSelectCheck" checked style="accent-color:var(--accent);">
+                                    <span>选中终端文本时自动复制到系统剪贴板</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Edit Command Modal -->
+    <div id="editModal" class="modal-overlay" onclick="if(event.target===this) closeEditModal();">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">编辑指令</div>
+                <button class="icon-btn" onclick="closeEditModal()"><svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>
+            </div>
+            <div class="modal-body">
+                <textarea id="editTextarea" class="input" style="height:140px; font-family:'JetBrains Mono', monospace; font-size:13px;"></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="closeEditModal()">取消</button>
+                <button class="btn primary" onclick="saveEdit()">保存修改</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Custom Port Modal -->
+    <div id="addPortModal" class="modal-overlay" onclick="if(event.target===this) closeAddPortModal();">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">添加串口设备</div>
+                <button class="icon-btn" onclick="closeAddPortModal()"><svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>端口路径 / 名称</label>
+                    <input type="text" id="modalPortPath" class="input" placeholder="例如: /dev/ttyUSB0 或 COM3">
+                </div>
+                <div class="form-group">
+                    <label>别名 (可选)</label>
+                    <input type="text" id="modalPortAlias" class="input" placeholder="例如: 传感器主板 1">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="closeAddPortModal()">取消</button>
+                <button class="btn primary" onclick="submitAddPortModal()">确认添加</button>
+            </div>
+        </div>
+    </div>
+
+    <input type="file" id="importFileInput" style="display:none" onchange="handleImportFile(event)">
+    <div id="toastContainer"></div>
+
+    <script src="/static/js/xterm.js"></script>
+    <script src="/static/js/xterm-addon-fit.js"></script>
+    <script src="/static/js/xterm-addon-search.js"></script>
+    <script src="/static/js/app.js?v={{.AssetStamp}}"></script>
+    
+    <script>
+        // Theme toggle helper
+        function toggleTheme() {
+            const html = document.documentElement;
+            const current = html.getAttribute('data-theme') || 'dark';
+            const next = current === 'dark' ? 'light' : 'dark';
+            html.setAttribute('data-theme', next);
+            localStorage.setItem('theme', next);
+            if (typeof updateTerminalThemes === 'function') updateTerminalThemes();
+        }
+
+        // Sidebar logic
+        let _sidebarVisible = localStorage.getItem('sidebar_visible') !== 'false';
+        function toggleSidebar() {
+            _sidebarVisible = !_sidebarVisible;
+            localStorage.setItem('sidebar_visible', _sidebarVisible);
+            const sidebar = document.getElementById('sidebar');
+            if (sidebar) sidebar.classList.toggle('collapsed', !_sidebarVisible);
+            setTimeout(() => { if (typeof portTerminals !== 'undefined') portTerminals.forEach(pt => { if(pt.fitAddon) try{pt.fitAddon.fit();}catch(e){} }); }, 280);
+        }
+
+        function initSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            if (sidebar && !_sidebarVisible) sidebar.classList.add('collapsed');
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            initSidebar();
+        });
+
+        // PWA update handlers
+        let _pwaWaitingWorker = null;
+        let _pwaRefreshing = false;
+
+        function pwaShowBanner() {
+            const b = document.getElementById('pwaUpdateBanner');
+            if (b) b.style.display = 'flex';
+        }
+        function pwaDismissBanner() {
+            const b = document.getElementById('pwaUpdateBanner');
+            if (b) b.style.display = 'none';
+        }
+        function pwaApplyUpdate() {
+            const btn = document.getElementById('pwaUpdateNowBtn');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = '更新中...';
+            }
+            if (_pwaWaitingWorker) {
+                _pwaWaitingWorker.postMessage({ type: 'SKIP_WAITING' });
+            } else if (navigator.serviceWorker) {
+                navigator.serviceWorker.ready.then(reg => {
+                    if (reg.waiting) {
+                        reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+                    }
+                });
+            }
+            // Fallback reload if controllerchange doesn't fire within 1.5s
+            setTimeout(() => {
+                if (!_pwaRefreshing) {
+                    _pwaRefreshing = true;
+                    window.location.reload();
+                }
+            }, 1500);
+        }
+        const updateBtn = document.getElementById('pwaUpdateNowBtn');
+        if (updateBtn) updateBtn.addEventListener('click', pwaApplyUpdate);
+
+        // Browsers only: in the desktop GUI (window.mygo) the SW is
+        // never registered — app.js removes any registration an older
+        // build left behind and reloads once to escape its control.
+        // (Registering here while app.js unregisters formed a
+        // reload loop: fresh install → activate → clients.claim() →
+        // controllerchange → reload → … every ~1s.)
+        if ('serviceWorker' in navigator && !window.mygo) {
+            // Automatically reload when new service worker takes control
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                if (!_pwaRefreshing) {
+                    _pwaRefreshing = true;
+                    window.location.reload();
+                }
+            });
+
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js').then(reg => {
+                    if (reg.waiting && navigator.serviceWorker.controller) {
+                        _pwaWaitingWorker = reg.waiting;
+                        pwaShowBanner();
+                    }
+
+                    reg.addEventListener('updatefound', () => {
+                        const newWorker = reg.installing;
+                        if (!newWorker) return;
+                        newWorker.addEventListener('statechange', () => {
+                            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                _pwaWaitingWorker = newWorker;
+                                pwaShowBanner();
+                            }
+                        });
+                    });
+                }).catch(() => {});
+            });
+        }
+    </script>
+</body>
+</html>
