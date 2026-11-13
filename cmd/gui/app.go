@@ -153,8 +153,11 @@ type nativeApp struct {
 	// Terminal view.
 	// termFocusPending asks the next terminal render to give
 	// the terminal the keyboard focus (set by a pill-body
-	// click; consumed by the terminal section). UI thread
-	// only: both endpoints run inside render.
+	// click, by closing a find bar, and by Enter in the
+	// command bar; consumed by the terminal section). UI
+	// thread only: both endpoints run inside render, except
+	// the command bar's Enter, which sets it from OnTextKey
+	// — still on the main thread, between frames.
 	termFocusPending bool
 	// localTerm is the single global split-pane local terminal
 	// (see localterm.go): it is not in terms, so no serial path
@@ -183,10 +186,21 @@ type nativeApp struct {
 	findSerial   findState
 	findLocal    findState
 	cmdInput     string
-	cmdHistIdx   int  // index into the current dropdown matches, -1 = none
+	cmdHistIdx   int  // index into cmdList, -1 = none
 	histNavIdx   int  // index into full history for ↑/↓ without dropdown, -1 = none
 	cmdHistHide  bool // Esc hid the dropdown; cleared on the next input edit
 	prevCmdInput string
+	// cmdList is the dropdown's match list, frozen while the user
+	// navigates it (see cmdBarView): the input is re-filled from
+	// it on every ↑/↓, so recomputing the list from the filled
+	// text would move the rows under the selection.
+	cmdList []string
+	// cmdCaretEnd asks the next command-bar render to put the
+	// caret at the end of the input (set by a history fill in
+	// cmdBarKey, consumed by cmdBarView). k.SetText only clamps
+	// the caret, it does not move it, so a fill from offset 0
+	// would otherwise leave the caret at 0. UI thread only.
+	cmdCaretEnd bool
 
 	// History view.
 	history      []HistoryEntry
@@ -1315,9 +1329,21 @@ func (a *nativeApp) deliverCommand(id, text string) {
 	if client != nil {
 		_ = client.AddCommand(id, text)
 	}
-	if err := a.sendSerial(id, text+defaultLineEnding); err != nil {
+	// commandWire, not the raw draft: a multi-line draft (or a
+	// multi-line history entry) carries "\n" between lines, and
+	// the device expects CRLF per line.
+	if err := a.sendSerial(id, commandWire(text)+defaultLineEnding); err != nil {
 		a.setStatus("发送失败: %v", err)
 	}
+}
+
+// commandWire converts a command draft to what goes on the wire:
+// every line ends with CRLF, never a bare LF. Normalize any CRLF
+// already in the text first, so a history entry recorded with
+// CRLF does not double it, then "\n" to CRLF. The history
+// record keeps the draft as typed.
+func commandWire(text string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\n", "\r\n")
 }
 
 // sendCommandBar sends the command bar's line and clears it.
@@ -1331,6 +1357,10 @@ func (a *nativeApp) sendCommandBar() {
 	a.cmdHistIdx = -1
 	a.histNavIdx = -1
 	a.mu.Unlock()
+	// As in the Enter path: the input is empty now, so a fill's
+	// caret request is moot — and applying it would yank the
+	// focus back to the input.
+	a.cmdCaretEnd = false
 	a.invalidate()
 }
 

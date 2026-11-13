@@ -143,27 +143,29 @@ func TestNavigateCmdHistory(t *testing.T) {
 		cmdHistIdx: -1,
 		histNavIdx: -1,
 	}
-	matches := []string{"m1", "m2"}
-	app.navigateCmdHistory(1, matches)
-	if app.cmdHistIdx != 0 {
-		t.Fatalf("down into matches: idx = %d, want 0", app.cmdHistIdx)
+	// Dropdown navigation fills the input live and wraps.
+	app.cmdList = []string{"m1", "m2"}
+	if got := app.navigateDropdown(1); got != "m1" || app.cmdHistIdx != 0 || app.cmdInput != "m1" {
+		t.Fatalf("down into matches: got = %q idx = %d input = %q, want m1/0/m1", got, app.cmdHistIdx, app.cmdInput)
 	}
-	app.navigateCmdHistory(1, matches)
-	app.navigateCmdHistory(1, matches)
-	if app.cmdHistIdx != 0 {
-		t.Fatalf("matches wrap: idx = %d, want 0", app.cmdHistIdx)
+	app.navigateDropdown(1)
+	app.navigateDropdown(1)
+	if app.cmdHistIdx != 0 || app.cmdInput != "m1" {
+		t.Fatalf("matches wrap: idx = %d input = %q, want 0/m1", app.cmdHistIdx, app.cmdInput)
 	}
+	// Full history, no dropdown.
+	app.cmdList = nil
 	app.cmdHistIdx = -1
-	app.navigateCmdHistory(-1, nil)
+	app.navigateCmdHistory(-1)
 	if app.cmdInput != "newest" || app.histNavIdx != 0 {
 		t.Fatalf("up in full history: input = %q idx = %d", app.cmdInput, app.histNavIdx)
 	}
-	app.navigateCmdHistory(-1, nil)
+	app.navigateCmdHistory(-1)
 	if app.cmdInput != "older" {
 		t.Fatalf("up again: input = %q, want older", app.cmdInput)
 	}
-	app.navigateCmdHistory(1, nil)
-	app.navigateCmdHistory(1, nil)
+	app.navigateCmdHistory(1)
+	app.navigateCmdHistory(1)
 	if app.cmdInput != "" || app.histNavIdx != -1 {
 		t.Fatalf("down past newest: input = %q idx = %d", app.cmdInput, app.histNavIdx)
 	}
@@ -831,12 +833,14 @@ func TestInlineHistoryEditState(t *testing.T) {
 
 // TestCmdBarDropdownFlow drives the command bar through the
 // headless Tester: typing opens the dropdown WITHOUT losing the
-// input's focus, Down selects, Enter sends the selection straight
-// to the serial line AND clears the input, and Esc closes only the
-// dropdown with focus still in the input. The direct send here
-// has no client, so it fails into the status line instead of
-// touching a device (no "[Not connected]" line is fed anymore —
-// with a client, the send would auto-connect and buffer).
+// input's focus, Down selects AND fills the input live with the
+// match, Enter sends the input's content (the selected match)
+// AND clears the input AND moves the focus to the serial
+// terminal, and Esc closes only the dropdown with focus still
+// in the input. The send here has no client, so it fails into
+// the status line instead of touching a device (no "[Not
+// connected]" line is fed anymore — with a client, the send
+// would auto-connect and buffer).
 func TestCmdBarDropdownFlow(t *testing.T) {
 	fake := &fakeSender{}
 	conn := newPortConn(fake, "ttyUSB0")
@@ -881,22 +885,42 @@ func TestCmdBarDropdownFlow(t *testing.T) {
 	if !tt.HasText("AT+VERSION") || !tt.HasText("AT+RESET") {
 		t.Fatalf("dropdown should show matches; texts = %v", tt.Texts())
 	}
-	// Down selects the first match; Enter sends it directly.
+	// Down selects the first match and fills the input live.
+	// Matches are newest first, and "STATUS?" contains "AT"
+	// too, so the first match is "STATUS?", then "AT+RESET".
 	tt.Key(0, ui.KeyDown)
 	tt.Frame()
 	if app.cmdHistIdx != 0 {
 		t.Fatalf("down should select index 0, got %d", app.cmdHistIdx)
 	}
+	if app.cmdInput != "STATUS?" {
+		t.Fatalf("down should fill the input live, got %q, want STATUS?", app.cmdInput)
+	}
+	tt.Key(0, ui.KeyDown)
+	tt.Frame()
+	if app.cmdHistIdx != 1 || app.cmdInput != "AT+RESET" {
+		t.Fatalf("second down: idx = %d input = %q, want 1/AT+RESET", app.cmdHistIdx, app.cmdInput)
+	}
 	tt.Key(0, ui.KeyEnter)
 	tt.Frame()
 	if app.cmdHistIdx != -1 || !app.cmdHistHide {
-		t.Fatalf("enter direct-send should clear selection and hide, idx=%d hide=%v", app.cmdHistIdx, app.cmdHistHide)
+		t.Fatalf("enter send should clear selection and hide, idx=%d hide=%v", app.cmdHistIdx, app.cmdHistHide)
 	}
 	if app.cmdInput != "" {
-		t.Fatalf("enter direct-send must clear the input, got %q", app.cmdInput)
+		t.Fatalf("enter send must clear the input, got %q", app.cmdInput)
 	}
-	// Typing again re-opens the dropdown — and proves the input
-	// kept its focus through the send-and-clear cycle.
+	// Enter moved the focus to the terminal: typing now reaches
+	// the device (the fake sender), not the input.
+	tt.Type("AT")
+	tt.Frame()
+	if app.cmdInput != "" {
+		t.Fatalf("typing after enter should not reach the input, got %q", app.cmdInput)
+	}
+	waitFakeWrites(t, fake, "AT")
+	// Clicking the input row brings the focus back; typing again
+	// re-opens the dropdown.
+	tt.ClickAt(600, sendRect.Y+sendRect.H/2)
+	tt.Frame()
 	tt.Type("AT")
 	tt.Frame()
 	if app.cmdHistHide {

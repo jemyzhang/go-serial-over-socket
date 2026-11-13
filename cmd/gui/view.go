@@ -700,6 +700,19 @@ func (a *nativeApp) localPaneView(c *ui.Context, snap snapshot, p palette, lt *l
 	a.findBarOverlay(c, p, findPaneLocal, lt.term, lv)
 }
 
+// cmdDropdownLine is the one line a dropdown row shows for a
+// history command: the first line only, with " …" when the
+// command runs on to more lines. An overlong first line is cut
+// by the row's SingleLine with its own ellipsis at the row
+// width; a short first line of a multi-line command still gets
+// the marker, so a row never looks like the whole command.
+func cmdDropdownLine(cmd string) string {
+	if i := strings.Index(cmd, "\n"); i >= 0 {
+		return strings.TrimSuffix(cmd[:i], "\r") + " …"
+	}
+	return strings.TrimSuffix(cmd, "\r")
+}
+
 func (a *nativeApp) cmdBarView(c *ui.Context, snap snapshot, p palette) {
 	info, ok := snap.ports[snap.selected]
 	dot := p.dim
@@ -708,19 +721,37 @@ func (a *nativeApp) cmdBarView(c *ui.Context, snap snapshot, p palette) {
 		dot = statusColor(p, info)
 		label = displayName(info)
 	}
-	// The dropdown hides on Esc (and on a direct-send Enter) and
-	// stays hidden until the input text changes again. The input
-	// itself stays a single-line TextInput on purpose: a TextArea
-	// swallows Enter/Up/Down at the editor level, which would
-	// break every keyboard rule below (probe-verified, see
-	// README). Long entries are still fully visible because the
-	// dropdown rows wrap.
+	// The dropdown hides on Esc (and on an Enter send) and stays
+	// hidden until the input text changes again. The input is a
+	// multi-line TextArea: a probe (temporary test, since
+	// deleted) verified that OnTextKey — not Shortcut or
+	// Submitted, which the editor swallows for Enter/Up/Down —
+	// intercepts Enter/Up/Down before the editor acts, so every
+	// keyboard rule below lives in cmdBarKey. The area grows
+	// from 1 line to 5, then scrolls — but Lines(1, 5) alone
+	// does not get there: the theme gives every TextArea a
+	// MinHeight of 80 DIPs, so an empty bar would sit ~4 lines
+	// tall, and the Lines cap counts the text system's line,
+	// which runs taller than the lines as rendered on some
+	// fonts, so a 6th line's glyphs could still show below the
+	// fold. MinHeight(0) drops the floor to the 1-line height,
+	// and FixedLineHeight(20) pins the rendered pitch to the
+	// line the cap counts, so the box is exactly 1..5 rendered
+	// lines (probe-verified, headless: 32/52/72/92/112 for
+	// 0..5 lines, 112 past that). Radius 10, like the panel
+	// search box: the old 999 made a tall bar a stadium.
 	if a.cmdInput != a.prevCmdInput {
+		// The user edited the text (typing, or a fill from the
+		// no-dropdown history path): rebuild the dropdown list
+		// from the new query, drop any stale selection, and
+		// re-show the dropdown. A navigation fill syncs
+		// prevCmdInput itself, so it never reaches here.
 		a.prevCmdInput = a.cmdInput
 		a.cmdHistHide = false
+		a.cmdHistIdx = -1
+		a.cmdList = historyMatches(a.cmdInput, snap.history)
 	}
-	matches := historyMatches(a.cmdInput, snap.history)
-	dropdown := len(matches) > 0 && strings.TrimSpace(a.cmdInput) != "" && !a.cmdHistHide
+	dropdown := len(a.cmdList) > 0 && strings.TrimSpace(a.cmdInput) != "" && !a.cmdHistHide
 
 	// Both the column and the input's row are keyed: an unkeyed
 	// element's id mixes in its sibling index, so the row's id
@@ -737,34 +768,45 @@ func (a *nativeApp) cmdBarView(c *ui.Context, snap snapshot, p palette) {
 			// pressed, focus stays where it is — the combobox
 			// pattern this API is documented for.
 			ui.Column(c).Gap(2).KeepFocus().Children(func() {
-				for i, m := range matches {
+				for i, m := range a.cmdList {
 					idx := i
 					// A Button with an empty label + Children is
-					// the documented way to get a clickable row
-					// whose text wraps: plain button labels are
-					// forced SingleLine and would truncate long
-					// commands. The row is as wide as the input
-					// (same column, same padding), so it never
-					// exceeds the input width.
+					// the documented way to get a clickable row:
+					// plain button labels are forced SingleLine
+					// and would truncate long commands. Each row
+					// shows one line only (see cmdDropdownLine):
+					// the text itself is SingleLine, so an
+					// overlong first line is cut with its own
+					// ellipsis instead of wrapping. The row is
+					// as wide as the input (same column, same
+					// padding), so it never exceeds the input
+					// width.
 					btn := ui.Button(c.Key("hist-sug:"+strconv.Itoa(i)), "").Border(0, ui.RGBA(0, 0, 0, 0)).Background(ui.RGBA(0, 0, 0, 0)).Padding(4, 8)
 					if i == a.cmdHistIdx {
 						btn = btn.Background(p.hex(p.hover))
 					}
 					btn.Children(func() {
-						ui.Text(c, m).Grow(1)
+						ui.Text(c, cmdDropdownLine(m)).Grow(1).SingleLine()
 					})
 					// A click only fills the input: a click is
 					// easy to land by accident while aiming at
 					// the input, and direct-send on click could
 					// fire a dangerous command at the device.
-					// Enter on a selection is the deliberate
-					// direct-send path.
+					// Enter on a selection sends what the
+					// input holds (see navigateDropdown). The
+					// caret goes to the end of the filled
+					// text, as the keyboard navigation fill
+					// and the WebUI's selectHistoryItem do:
+					// the area then reveal-scrolls to the end,
+					// so a fill longer than 5 lines shows its
+					// last 5, never a 6th line peeking below.
 					if btn.Clicked() {
 						a.mu.Lock()
-						a.cmdInput = matches[idx]
+						a.cmdInput = a.cmdList[idx]
 						a.cmdHistIdx = -1
 						a.cmdHistHide = true
 						a.mu.Unlock()
+						a.cmdCaretEnd = true
 						a.invalidate()
 					}
 				}
@@ -773,48 +815,34 @@ func (a *nativeApp) cmdBarView(c *ui.Context, snap snapshot, p palette) {
 		ui.Row(c.Key("cmd-row")).Gap(8).Children(func() {
 			dotIcon(c, p.hex(dot))
 			ui.Text(c, label).FontSize(12).Bold()
-			in := ui.TextInput(c.Key("cmd-input"), &a.cmdInput).Fill().Radius(999).Background(p.hex(p.hover))
+			in := ui.TextArea(c.Key("cmd-input"), &a.cmdInput).Fill().Lines(1, 5).FixedLineHeight(20).MinHeight(0).Radius(10).Background(p.hex(p.hover))
 			if dropdown {
 				in.Focus()
 			}
-			// Enter in a single-line input is consumed by the
-			// editor itself and reported via Submitted(), NOT via
-			// Shortcut — Shortcut(0, KeyEnter) never fires here
-			// (the old code's Enter branch was dead for this
-			// reason; only the Send button ever sent).
-			if in.Submitted() {
-				if a.cmdHistIdx >= 0 && a.cmdHistIdx < len(matches) {
-					// Enter on a selection = history Send:
-					// straight to the serial line, then the
-					// input is cleared and the dropdown closes
-					// (the input itself keeps its focus: it is
-					// keyed, so its id survives the dropdown's
-					// disappearance). The Send button path
-					// clears via sendCommandBar; the dropdown
-					// row click still only fills (anti-misfire).
-					cmd := matches[a.cmdHistIdx]
-					a.mu.Lock()
-					a.cmdHistIdx = -1
-					a.cmdHistHide = true
-					a.histNavIdx = -1
-					a.cmdInput = ""
-					// Keep the change tracker in sync, or the
-					// next frame would see "" != "AT" and flip
-					// the hide flag back on.
-					a.prevCmdInput = ""
-					a.mu.Unlock()
-					a.sendHistoryDirect(cmd)
-					a.invalidate()
-				} else {
-					a.sendCommandBar()
-				}
+			if a.cmdCaretEnd {
+				// A history fill put the caret at the end of
+				// the filled text, as the WebUI does (its
+				// navigateHistory sets selectionStart/End to
+				// the value length): k.SetText only clamps
+				// the caret, it does not move it.
+				a.cmdCaretEnd = false
+				n := len([]rune(a.cmdInput))
+				in.SetTextSelection(n, n)
 			}
-			if in.Shortcut(0, ui.KeyUp) {
-				a.navigateCmdHistory(-1, matches)
-			}
-			if in.Shortcut(0, ui.KeyDown) {
-				a.navigateCmdHistory(1, matches)
-			}
+			// The caret as of this render, for the ↑/↓ split in
+			// cmdBarKey: TextSelection can only be read on a
+			// live element, so it is stashed here and the
+			// OnTextKey closure captures it (see cmdBarKey).
+			caretStart, caretEnd := in.TextSelection()
+			// Enter/Up/Down are intercepted in OnTextKey, not
+			// via Shortcut or Submitted: the editor wants them
+			// (Enter inserts a newline, ↑/↓ move the caret),
+			// so no Shortcut for them ever fires. Esc is the
+			// exception — the editor does not want it, so the
+			// Shortcut below still works, as before.
+			in.OnTextKey(func(k ui.TextKey) bool {
+				return a.cmdBarKey(k, caretStart, caretEnd)
+			})
 			if in.Shortcut(0, ui.KeyEscape) {
 				// Close ONLY the dropdown; the input keeps its
 				// focus (it is keyed, so its identity survives
@@ -833,40 +861,177 @@ func (a *nativeApp) cmdBarView(c *ui.Context, snap snapshot, p palette) {
 	})
 }
 
-// navigateCmdHistory moves through the dropdown matches when they
-// are shown, else through the full history (newest first). This is
-// an approximation of the WebUI's split dropdown/history navigation:
-// single-line input has no cursor-position condition to split on.
-// Pressing Up/Down re-opens a dropdown Esc had hidden: keyboard
-// navigation implies wanting the list back.
-func (a *nativeApp) navigateCmdHistory(dir int, matches []string) {
+// navigateDropdown moves the dropdown selection one step in dir
+// (+1 down, -1 up) and fills the input live with the selected
+// match, so the user can edit it before sending. The input
+// stays in sync: cmdHistIdx only ever points at a match the
+// input already holds, so Enter can send the input and reach
+// the same bytes the old direct-send reached. prevCmdInput is
+// synced too, so the fill does not look like an edit to
+// cmdBarView and the frozen cmdList does not move under the
+// selection. With no selection yet, Down takes the first match
+// and Up the last, as before. It returns the match ("" when
+// there is no list); the caller drives the fill into the editor
+// through the key (see cmdBarKey) — writing the bound value
+// from OnTextKey alone is not enough, as the editor writes what
+// it holds over it (see TextKey.SetText).
+func (a *nativeApp) navigateDropdown(dir int) string {
 	a.mu.Lock()
-	a.cmdHistHide = false
-	if len(matches) > 0 {
-		if a.cmdHistIdx < 0 {
-			if dir > 0 {
-				a.cmdHistIdx = 0
-			} else {
-				a.cmdHistIdx = len(matches) - 1
-			}
+	defer a.mu.Unlock()
+	if len(a.cmdList) == 0 {
+		return ""
+	}
+	if a.cmdHistIdx < 0 {
+		if dir > 0 {
+			a.cmdHistIdx = 0
 		} else {
-			a.cmdHistIdx = (a.cmdHistIdx + dir + len(matches)) % len(matches)
+			a.cmdHistIdx = len(a.cmdList) - 1
 		}
-	} else if n := len(a.history); n > 0 {
+	} else {
+		a.cmdHistIdx = (a.cmdHistIdx + dir + len(a.cmdList)) % len(a.cmdList)
+	}
+	sel := a.cmdList[a.cmdHistIdx]
+	a.cmdInput = sel
+	a.prevCmdInput = sel
+	return sel
+}
+
+// navigateCmdHistory walks the full history with ↑/↓ when no
+// dropdown is open: Up toward older entries, Down back toward
+// newer ones, and past the newest back to a blank input. It
+// returns the fill text and whether the input changes at all:
+// Down with no history position, or Up already at the oldest
+// entry, changes nothing — and must not blank the draft. The
+// fill deliberately does not sync prevCmdInput, so the edit
+// tracker in cmdBarView rebuilds the dropdown for the filled
+// text on the next frame, as before.
+func (a *nativeApp) navigateCmdHistory(dir int) (string, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.cmdHistHide = false
+	if n := len(a.history); n > 0 {
 		if dir < 0 { // up: older
 			if a.histNavIdx < n-1 {
 				a.histNavIdx++
+			} else {
+				return "", false
 			}
 		} else if a.histNavIdx > 0 { // down: newer
 			a.histNavIdx--
 		} else if a.histNavIdx == 0 {
 			a.histNavIdx = -1
-			a.cmdInput = ""
+		} else {
+			return "", false
 		}
-		if a.histNavIdx >= 0 {
-			a.cmdInput = a.history[a.histNavIdx].Command
-		}
+	} else {
+		return "", false
 	}
-	a.mu.Unlock()
-	a.invalidate()
+	var fill string
+	if a.histNavIdx >= 0 {
+		fill = a.history[a.histNavIdx].Command
+	}
+	a.cmdInput = fill
+	return fill, true
+}
+
+// cmdBarKey handles the command bar's keys in the TextArea's
+// OnTextKey. It runs between frames, on the main thread.
+// caretStart/caretEnd are the caret (rune offsets) read from the
+// input during the last render — the probe (a temporary test,
+// since deleted) verified OnTextKey returning true consumes
+// Enter/Up/Down before the editor acts, Shift+Enter still
+// inserts a newline, and the render-time caret is current when
+// the next key arrives, because frames settle between keys.
+// The one residual risk is a frame lagging under load: a single
+// ↑/↓ could then navigate history instead of moving the caret,
+// or the reverse; pressing the other key recovers it.
+//
+// The key's own text is used, not the bound value: k.Text is
+// the editor's text as the key comes, which may be ahead of the
+// bound value (a fast type-then-Enter would otherwise drop the
+// last characters), and k.SetText is the only way to clear or
+// fill the input from here.
+func (a *nativeApp) cmdBarKey(k ui.TextKey, caretStart, caretEnd int) bool {
+	switch k.Key {
+	case ui.KeyEnter:
+		if k.Mods != 0 {
+			// Shift+Enter (and the rest): let the editor
+			// insert the newline.
+			return false
+		}
+		text := k.Text()
+		if strings.TrimSpace(text) == "" {
+			// Enter on a blank bar: swallow it (an empty
+			// newline would only grow the bar) and stay.
+			return true
+		}
+		// Plain Enter sends the input — which, after a
+		// dropdown navigation, already holds the selected
+		// match (see navigateDropdown), so this one path
+		// covers both the old direct-send and the plain
+		// send. Then the focus leaves the input for the
+		// serial terminal: the next terminal render takes
+		// it via termFocusPending.
+		a.deliverCommand(a.selectedID(), text)
+		k.SetText("")
+		a.mu.Lock()
+		a.cmdHistIdx = -1
+		a.histNavIdx = -1
+		a.cmdHistHide = true
+		a.prevCmdInput = ""
+		a.cmdList = nil
+		a.mu.Unlock()
+		// The fill's caret request is moot now: the input is
+		// empty and the focus leaves it.
+		a.cmdCaretEnd = false
+		a.termFocusPending = true
+		a.invalidate()
+		return true
+	case ui.KeyUp, ui.KeyDown:
+		if k.Mods != 0 {
+			// e.g. Ctrl+Shift+↑/↓: the editor's word
+			// selection, as before.
+			return false
+		}
+		dir := 1
+		if k.Key == ui.KeyUp {
+			dir = -1
+		}
+		a.mu.Lock()
+		dropdown := len(a.cmdList) > 0 && strings.TrimSpace(a.cmdInput) != "" && !a.cmdHistHide
+		a.mu.Unlock()
+		if dropdown {
+			// The fill goes through the key as well as the
+			// bound value: the bound value alone would be
+			// overwritten by what the editor holds. The caret
+			// goes to the end of the filled text, as the
+			// WebUI does.
+			k.SetText(a.navigateDropdown(dir))
+			a.cmdCaretEnd = true
+			a.invalidate()
+			return true
+		}
+		// No dropdown: navigate the full history only when
+		// the caret sits at the edge the key points at —
+		// the WebUI rule (its textarea does the same split
+		// on selectionStart/selectionEnd). Otherwise the
+		// caret moves inside the multi-line text.
+		if caretStart != caretEnd {
+			return false
+		}
+		text := k.Text()
+		if dir < 0 && caretStart == 0 || dir > 0 && caretStart == len([]rune(text)) {
+			if fill, ok := a.navigateCmdHistory(dir); ok {
+				k.SetText(fill)
+				if fill != "" {
+					a.cmdCaretEnd = true
+				}
+				a.invalidate()
+			}
+			return true
+		}
+		return false
+	default:
+		return false
+	}
 }

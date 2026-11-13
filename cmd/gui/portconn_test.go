@@ -37,6 +37,36 @@ func (f *fakeSender) last() (writeCall, bool) {
 	return f.calls[len(f.calls)-1], true
 }
 
+// fakeWrites concatenates every payload the fake sender received,
+// in order — terminal typing may arrive as one write or several.
+func fakeWrites(f *fakeSender) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var sb strings.Builder
+	for _, c := range f.calls {
+		sb.WriteString(c.data)
+	}
+	return sb.String()
+}
+
+// waitFakeWrites polls until the fake sender has received want:
+// Terminal.Send only queues the bytes; the terminal's own
+// goroutine drains the queue and writes them to the Conn, so a
+// check right after typing can run before the drain.
+func waitFakeWrites(t *testing.T, f *fakeSender, want string) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		if got := fakeWrites(f); got == want {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("fake writes = %q, want %q", fakeWrites(f), want)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func readAll(t *testing.T, c *portConn, want int) string {
 	t.Helper()
 	var sb strings.Builder

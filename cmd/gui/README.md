@@ -238,36 +238,62 @@ of rounded shadowed containers). Status per area:
   loses its screen — the WebUI's per-port xterm model. Terminals
   pump their Conn from creation, so background tabs accumulate
   output before they are ever shown.
-- **Command bar**: single-line input, deliberately — a TextArea
-  would grow with text, but it swallows Enter/Up/Down at the
-  editor level, which would break every keyboard rule below
-  (probe-verified; the growth clause is instead satisfied by
-  dropdown rows that wrap to show full entries). Focus stays in
-  the input while the dropdown is open: the input, its row, and
-  its column are all keyed, because an unkeyed element's id
-  mixes in its sibling index — keying only the input was tried
-  first and still lost focus when the list opened or closed,
-  since the row's own id flipped with the list above it. The
-  dropdown itself carries `KeepFocus()` (the combobox pattern).
+- **Command bar**: multi-line TextArea, 1–5 lines (then it
+  scrolls) — the keys are intercepted in `OnTextKey`, not via
+  `Shortcut` or `Submitted`, which the editor swallows for
+  Enter/Up/Down (probe-verified: returning true from
+  `OnTextKey` consumes the key before the editor acts, so
+  Shift+Enter still inserts a newline while plain Enter does
+  not; Esc is not wanted by the editor, so its Shortcut still
+  fires). The height is exactly 1–5 rendered lines: `Lines`
+  alone does not get there — the theme gives every TextArea a
+  MinHeight of 80 DIPs (an empty bar would sit ~4 lines tall),
+  and the Lines cap counts the text system's line, which runs
+  taller than the lines as rendered on some fonts, so a 6th
+  line's glyphs could still show below the fold. `MinHeight(0)`
+  drops the floor to the 1-line height and `FixedLineHeight(20)`
+  pins the rendered pitch to the line the cap counts
+  (probe-verified, headless: 32/52/72/92/112 for 0–5 lines, 112
+  past that). Radius 10, like the panel search box — the old
+  999 turned a tall bar into a stadium. A dropdown click fills
+  the input and puts the caret at the end, as the keyboard
+  navigation fill and the WebUI's selectHistoryItem do, so a
+  fill longer than 5 lines reveal-scrolls to its last 5. Focus
+  stays in the input while the dropdown is open:
+  the input, its row, and its column are all keyed, because an
+  unkeyed element's id mixes in its sibling index — keying only
+  the input was tried first and still lost focus when the list
+  opened or closed, since the row's own id flipped with the list
+  above it. The dropdown itself carries `KeepFocus()` (the
+  combobox pattern). The dropdown list is frozen while
+  navigating it, so the rows never move under the selection.
   Keyboard rules: ↑/↓ move the selection between dropdown items
-  (highlighted; pressing ↑/↓ re-opens a list Esc had hidden),
-  Enter on a selection sends that entry STRAIGHT to the serial
-  line (same as the history Send button) and then clears the
-  input, Enter with no selection sends the input's content
-  (also cleared — the Send button clears the same way),
-  Esc closes ONLY the dropdown with focus still in the input
-  (the frame-level panel-Esc yields while the dropdown is open,
-  or it would close the panel instead). A row CLICK still only
-  fills the input: a click is easy to land by accident while
-  aiming at the input, and direct-send on click could fire a
-  dangerous command at the device. Enter is read via
-  `Submitted()`, not `Shortcut(0, KeyEnter)` — a single-line
-  input consumes Enter itself, so the old Shortcut branch never
-  fired (only the Send button ever sent). Sends append the fixed
-  CRLF line ending (see below) and are recorded with
-  `add_command`. When the port is not connected, the send
-  auto-connects it instead of the old `[Not connected]`
-  in-terminal dead end — see "Auto-connect on typing" below.
+  and fill the input LIVE with the selected match (so it can be
+  edited before sending); with no dropdown, ↑/↓ walk the full
+  history only when the caret sits at the edge the key points
+  at (the WebUI rule — the caret is read during the render and
+  the keys settle between frames, so it is current), otherwise
+  the caret moves inside the text; a fill puts the caret at the
+  end of the filled text, as the WebUI does. Enter sends the
+  input's content — after a navigation that is the selected
+  match, so one path covers both — clears the input, and moves
+  the focus to the serial terminal (the Send button still only
+  sends and clears, focus untouched); Enter on a blank bar is
+  swallowed. Esc closes ONLY the dropdown with focus still in
+  the input (the frame-level panel-Esc yields while the dropdown
+  is open, or it would close the panel instead). A row CLICK
+  still only fills the input: a click is easy to land by
+  accident while aiming at the input, and direct-send on click
+  could fire a dangerous command at the device. Each dropdown
+  row shows one line only: the first line of the command, with
+  " …" when it runs on, and an overlong first line is cut with
+  its own ellipsis. Sends convert inner newlines to CRLF (every
+  line CRLF-terminated, never a bare LF — the WebUI still sends
+  inner newlines as bare LF) and append the fixed CRLF line
+  ending (see below), and are recorded with `add_command`. When
+  the port is not connected, the send auto-connects it instead
+  of the old `[Not connected]` in-terminal dead end — see
+  "Auto-connect on typing" below.
 - **Ports section**: one two-line row per port — line 1 alias
   (larger, bright) + dot, line 2 detail (smaller, muted:
   path · baud frame · vendor) with 配置/别名/连接·断开 at the
@@ -302,8 +328,7 @@ of rounded shadowed containers). Status per area:
   grows with its wrapped text up to 6 lines, then scrolls; mygo
   paints its scroll thumb on hover/drag only — there is no
   always-visible scrollbar API, and none is faked. The command
-  bar's input stays single-line on purpose (see below); only
-  this history editor is multi-line. Save passes the text
+  bar's input is multi-line as well (1–5 lines, see above). Save passes the text
   unchanged, so multi-line commands keep their newlines, not one
   inner card per row. Button groups wrap to two rows instead of
   clipping at the panel edge.
@@ -505,12 +530,13 @@ of rounded shadowed containers). Status per area:
   a fixed 400px panel, whether many pill tabs really compress
   into one row without a scrollbar, whether the OS shows the
   native tooltips, or whether the OS pops the menu.
-- **Command bar is single-line**: a TextArea would grow with
-  text, but it swallows Enter/Up/Down at the editor level, so
-  the input stays a TextInput and Shift+Enter sends like Enter.
-  Multi-line commands are not supported; the WebUI uses a
-  textarea. Long entries are still fully readable: the dropdown
-  rows wrap to show them whole.
+- **Command bar is multi-line now**: a TextArea, 1–5 lines, with
+  Enter sending (and moving the focus to the terminal),
+  Shift+Enter breaking the line, and ↑/↓ splitting on the
+  caret position as the WebUI does. One remaining difference:
+  the WebUI sends inner newlines as bare LF; the GUI converts
+  them to CRLF. Long entries are no longer fully readable in
+  the dropdown: each row shows one line only (see above).
 - **Flat buttons are borderless by construction, not by theme**:
   the theme button's outline is killed with an explicit
   `Border(0, transparent)` (and a manual `Hovered()` fill, since
@@ -525,9 +551,11 @@ of rounded shadowed containers). Status per area:
   the WebUI's card inputs are.
 - **Scrollback lines are converted to plugin bytes** at roughly
   160 bytes/line, and only apply to terminals created after saving.
-- **History dropdown navigation** merges the WebUI's split
-  dropdown/history navigation into one ↑/↓ path (no
-  cursor-position condition exists on a single-line input).
+- **History dropdown navigation** follows the WebUI's split:
+  with the dropdown open ↑/↓ move the selection (filling the
+  input live); without it, ↑/↓ walk the full history only when
+  the caret sits at the edge the key points at, otherwise the
+  caret moves inside the text.
 - **Background tabs are laid out at 80×24 until first shown**,
   then resized to fit; the emulator reflows on show.
 - **WebDAV test goes through the server** (push form values with
