@@ -539,17 +539,33 @@ func (a *nativeApp) palette() palette {
 
 func (a *nativeApp) onPorts(ports map[string]PortInfo) {
 	a.mu.Lock()
-	a.ports = ports
-	a.portIDs = sortedPortIDs(ports)
-	var gone []*termSession
-	for id, sess := range a.terms {
+	// Merge the fresh list over the retained one: a port the
+	// server still lists replaces its entry — a re-plugged
+	// port clears Gone and comes back on its resident session,
+	// history kept, no new window. A port that vanished from
+	// the list stays, marked Gone: its window and scrollback
+	// survive until the user closes them (see
+	// closeRetainedPort), and its draft stays for the
+	// reconnect. Nothing closes here anymore: the old code
+	// closed every gone port's terminal on the spot, which
+	// is what hid the history on unplug.
+	merged := make(map[string]PortInfo, len(ports))
+	for id, info := range ports {
+		merged[id] = info
+	}
+	for id, info := range a.ports {
 		if _, ok := ports[id]; !ok {
-			gone = append(gone, sess)
-			delete(a.terms, id)
-			delete(a.drafts, id)
+			info.Status = "disconnected"
+			info.Connected = false
+			info.Gone = true
+			merged[id] = info
 		}
 	}
-	_, stillThere := ports[a.selected]
+	a.ports = merged
+	// The order is the user's (see movePortTo): keep the pills
+	// where they are across broadcasts instead of re-sorting.
+	a.portIDs = mergePortOrder(a.portIDs, merged)
+	_, stillThere := merged[a.selected]
 	needReselect := a.selected == "" || !stillThere
 	next := ""
 	if needReselect && len(a.portIDs) > 0 {
@@ -606,18 +622,17 @@ func (a *nativeApp) onPorts(ports map[string]PortInfo) {
 	for _, id := range staleDisconnect {
 		a.replaceStaleStatus(fmt.Sprintf("正在断开 %s…", id), fmt.Sprintf("%s 已断开", id))
 	}
-	for _, sess := range gone {
-		_ = sess.term.Close()
-	}
 	if needReselect && next != "" {
 		a.selectPort(next)
 	}
 	// Settle auto-connect buffers against the fresh list: a
 	// broadcast is the safety net when a port_status reply was
-	// missed (e.g. across a reconnect). A port that vanished
+	// missed (e.g. across a reconnect). A port the user closed
 	// drops its buffer; a connected one flushes; an error or
-	// disconnected one only clears the outstanding flag, so the
-	// next write retries (see sendSerial).
+	// disconnected one — a vanished port is retained as
+	// disconnected, so it lands here too — only clears the
+	// outstanding flag, so the next write retries (see
+	// sendSerial).
 	flush := map[string][]byte{}
 	a.mu.Lock()
 	for id, buf := range a.pendingSend {
@@ -1039,6 +1054,60 @@ func (a *nativeApp) selectAdjacentPort(dir int) {
 	a.cmdHistHide = true
 }
 
+// movePortTo moves dragged to index in pill order (clamped to
+// the range after removing it); a no-op when the id is unknown.
+// The terminal windows follow the pills: terminalView renders
+// the selected port, and selectAdjacentPort walks portIDs, so
+// both follow this order with no other change.
+func (a *nativeApp) movePortTo(dragged string, index int) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	di := -1
+	for i, id := range a.portIDs {
+		if id == dragged {
+			di = i
+			break
+		}
+	}
+	if di < 0 {
+		return
+	}
+	ids := append([]string(nil), a.portIDs...)
+	ids = append(ids[:di], ids[di+1:]...)
+	if index < 0 {
+		index = 0
+	}
+	if index > len(ids) {
+		index = len(ids)
+	}
+	ids = append(ids[:index], append([]string{dragged}, ids[index:]...)...)
+	a.portIDs = ids
+	a.invalidate()
+}
+
+// mergePortOrder keeps the user's pill order across ports
+// broadcasts: ids still listed keep their places (a drag
+// reorder survives the next broadcast), ids the user closed
+// drop out, and genuinely new ports append in sorted order at
+// the end. The first broadcast starts from an empty order, so
+// it is just the sorted list, as before.
+func mergePortOrder(current []string, ports map[string]PortInfo) []string {
+	kept := make([]string, 0, len(current)+len(ports))
+	seen := make(map[string]bool, len(current))
+	for _, id := range current {
+		if _, ok := ports[id]; ok {
+			kept = append(kept, id)
+			seen[id] = true
+		}
+	}
+	for _, id := range sortedPortIDs(ports) {
+		if !seen[id] {
+			kept = append(kept, id)
+		}
+	}
+	return kept
+}
+
 func (a *nativeApp) closeAllTerms() {
 	a.mu.Lock()
 	sessions := make([]*termSession, 0, len(a.terms))
@@ -1051,6 +1120,58 @@ func (a *nativeApp) closeAllTerms() {
 	for _, sess := range sessions {
 		_ = sess.term.Close()
 	}
+}
+
+// closeRetainedPort closes a retained (hardware-gone) window at
+// the user's explicit request: the session, its draft, its pill
+// and any unsent buffer go away for good, and the selection
+// moves to the first remaining port. Only a Gone port closes
+// this way — a live port's window is never user-closed, it
+// comes back on the next broadcast. A re-plugged port starts a
+// fresh session: the history the user chose to discard is gone,
+// as asked. The close entry lives on the pill.
+func (a *nativeApp) closeRetainedPort(id string) {
+	a.mu.Lock()
+	info, ok := a.ports[id]
+	if !ok || !info.Gone {
+		a.mu.Unlock()
+		return
+	}
+	sess := a.terms[id]
+	delete(a.terms, id)
+	delete(a.ports, id)
+	delete(a.drafts, id)
+	delete(a.pendingSend, id)
+	delete(a.autoConnect, id)
+	ids := make([]string, 0, len(a.portIDs))
+	for _, pid := range a.portIDs {
+		if pid != id {
+			ids = append(ids, pid)
+		}
+	}
+	a.portIDs = ids
+	wasSelected := a.selected == id
+	next := ""
+	if wasSelected {
+		a.selected = ""
+		a.conn = nil
+		if len(ids) > 0 {
+			next = ids[0]
+		}
+	}
+	a.mu.Unlock()
+	if sess != nil {
+		_ = sess.term.Close()
+	}
+	if next != "" {
+		a.selectPort(next)
+		// Mirror a pill click: the new terminal takes the
+		// keyboard focus.
+		a.termFocusPending = true
+	} else if a.win != nil {
+		a.win.SetTitle("sos-gui")
+	}
+	a.invalidate()
 }
 
 // terminalKeyHandled decides the app-level terminal key
@@ -1116,8 +1237,19 @@ func (a *nativeApp) requestConnect(id string) error {
 func (a *nativeApp) connectPort(id string) {
 	a.mu.Lock()
 	client := a.client
+	info, known := a.ports[id]
 	a.mu.Unlock()
 	if client == nil || id == "" {
+		return
+	}
+	if known && info.Gone {
+		// The hardware is gone: connecting is impossible
+		// until it is plugged back in, so say so instead of
+		// sending a connect for a port the server no longer
+		// knows. The pill's power button is disabled for a
+		// gone port too; this guard covers the panel's
+		// connect button and any other caller.
+		a.setStatus("%s 已断开，硬件已拔出", id)
 		return
 	}
 	if err := a.requestConnect(id); err != nil {
@@ -1164,6 +1296,15 @@ func (a *nativeApp) sendSerial(id, data string) error {
 	if client == nil {
 		a.mu.Unlock()
 		return fmt.Errorf("not connected to server")
+	}
+	if known && info.Gone {
+		// The hardware is gone and the window is retained:
+		// nothing goes to the dead port, no buffer, no
+		// auto-connect — the caller reports the failure
+		// (deliverCommand puts it in the status line; a
+		// keystroke just drops).
+		a.mu.Unlock()
+		return fmt.Errorf("%s 已断开", id)
 	}
 	if known && info.Connected {
 		a.mu.Unlock()
@@ -1216,8 +1357,14 @@ func (a *nativeApp) takePending(id string) []byte {
 func (a *nativeApp) disconnectPort(id string) {
 	a.mu.Lock()
 	client := a.client
+	info, known := a.ports[id]
 	a.mu.Unlock()
 	if client == nil || id == "" {
+		return
+	}
+	if known && info.Gone {
+		// Already disconnected: the hardware is gone, so
+		// there is nothing to disconnect server-side.
 		return
 	}
 	if err := client.DisconnectPort(id); err != nil {

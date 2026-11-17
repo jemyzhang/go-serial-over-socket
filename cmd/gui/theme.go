@@ -199,6 +199,9 @@ func portTooltip(info PortInfo) string {
 	if info.Description != "" {
 		lines = append(lines, info.Description)
 	}
+	if info.Gone {
+		lines = append(lines, "已断开 · 硬件已拔出")
+	}
 	return strings.Join(lines, "\n")
 }
 
@@ -249,12 +252,17 @@ func lampDotColor(p palette, info PortInfo, recording bool, breath float32) ui.C
 // nothing. Connected green disconnects, disconnected muted
 // connects, error red reconnects, connecting amber is disabled —
 // a click on a connecting port must not fire a second connect.
+// A gone port (hardware unplugged, window retained) is disabled
+// too: connecting is impossible until it is plugged back in.
 // Disabled states are action-gated in the view, not
 // native-Disabled: a natively disabled element's click
 // fall-through to the pill Row is unproven, while a gated Button
 // provably consumes the click (the record-dot pattern), so the
 // pill never switches on a dead-button click.
 func pillConnectButton(p palette, info PortInfo) (color, tip, action string, disabled bool) {
+	if info.Gone {
+		return p.muted, "硬件已拔出", "", true
+	}
 	if info.Connected {
 		return p.success, "断开", "disconnect", false
 	}

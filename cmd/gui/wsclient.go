@@ -21,9 +21,14 @@ import (
 // PortInfo is one entry of the server's ports map (see
 // getPortsWithStatus in internal/web/web_server.go).
 type PortInfo struct {
-	ID          string
-	Status      string // "connected", "disconnected", "connecting", "error", "unknown"
-	Connected   bool
+	ID        string
+	Status    string // "connected", "disconnected", "connecting", "error", "unknown"
+	Connected bool
+	// Gone is client-side only, never sent by the server: the
+	// hardware vanished from a ports broadcast, so the window
+	// is retained (see onPorts) instead of closed. It clears
+	// when the port reappears in a later broadcast.
+	Gone        bool
 	Alias       string
 	Baudrate    int
 	Databits    int

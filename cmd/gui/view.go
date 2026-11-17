@@ -289,7 +289,15 @@ func (a *nativeApp) toolbarView(c *ui.Context, snap snapshot, p palette) {
 	ui.Column(c).Children(func() {
 		ui.Row(c).Height(46).Padding(0, 18).Gap(10).Background(p.hex(p.termBg)).Children(func() {
 			if len(snap.portIDs) > 0 {
-				ui.Row(c).Gap(4).Shrink(1).MinWidth(0).Children(func() {
+				// Pill centers, in pill order, for the
+				// drag-drop insertion index below: Bounds is
+				// the previous frame's rect, and the pills do
+				// not move during a drag, so it is current
+				// when a drop lands. A pill with no bounds yet
+				// (first frame) is skipped.
+				pillCenters := make([]float32, 0, len(snap.portIDs))
+				pillCenterIDs := make([]string, 0, len(snap.portIDs))
+				strip := ui.Row(c).Gap(4).Shrink(1).MinWidth(0).Children(func() {
 					for _, id := range snap.portIDs {
 						pid := id
 						info := snap.ports[pid]
@@ -375,6 +383,17 @@ func (a *nativeApp) toolbarView(c *ui.Context, snap snapshot, p palette) {
 								if iconButton(c, "toolbar-settings:"+pid, iconSettings, p, p.text).Padding(2, 4).Height(pillButtonHeight).Tooltip("设置").Clicked() {
 									a.openPortSettings(pid)
 								}
+								// A retained (hardware-gone) pill
+								// carries its own close button:
+								// the window stays until the user
+								// closes it here — the only
+								// close entry; the banner in the
+								// terminal pane is only a sign.
+								if info.Gone {
+									if iconButton(c, "toolbar-close:"+pid, iconClose, p, p.muted).Padding(2, 4).Height(pillButtonHeight).Tooltip("关闭窗口").Label("关闭窗口").Clicked() {
+										a.closeRetainedPort(pid)
+									}
+								}
 							})
 						})
 						if pid == snap.selected {
@@ -386,6 +405,13 @@ func (a *nativeApp) toolbarView(c *ui.Context, snap snapshot, p palette) {
 							}
 						}
 						pill = pill.Tooltip(portTooltip(info))
+						// Drag: the pill is a drag source for
+						// its port id. A press that does not
+						// move is still a click (the pill
+						// switches); a press that moves drags
+						// the pill and is no click, per the
+						// Drag contract.
+						pill = pill.Drag(pid)
 						// No right-click menu on pills anymore:
 						// its connect/disconnect and settings
 						// items moved into the button zone
@@ -412,8 +438,39 @@ func (a *nativeApp) toolbarView(c *ui.Context, snap snapshot, p palette) {
 							a.termFocusPending = true
 							a.cmdHistHide = true
 						}
+						// Center for the drop index below.
+						if b := pill.Bounds(); b.W > 0 {
+							pillCenters = append(pillCenters, b.X+b.W/2)
+							pillCenterIDs = append(pillCenterIDs, pid)
+						}
 					}
 				})
+				// Drop to reorder: the strip is the single drop
+				// target — the pills themselves take no drops,
+				// so the innermost-target rule never splits a
+				// drop between a pill and the strip. The dragged
+				// port lands where the pointer released: before
+				// the first pill whose center is right of it,
+				// else at the end. PointerPosition at Drop time
+				// is the release point (probe-verified
+				// headless); if it ever reports the pointer off
+				// the strip, the drop is left alone rather than
+				// guessed.
+				if dropped, ok := ui.Drop[string](strip); ok && len(pillCenterIDs) > 0 {
+					if px, _, over := strip.PointerPosition(); over {
+						x := strip.Bounds().X + px
+						idx := 0
+						for i, cx := range pillCenters {
+							if pillCenterIDs[i] == dropped {
+								continue
+							}
+							if cx < x {
+								idx++
+							}
+						}
+						a.movePortTo(dropped, idx)
+					}
+				}
 			} else {
 				dotIcon(c, p.hex(p.dim))
 				if quietButton(c, "toolbar-port", "未选择串口", p, p.muted).Clicked() {
@@ -622,6 +679,18 @@ func (a *nativeApp) serialPaneView(c *ui.Context, snap snapshot, p palette, sess
 			dotIcon(c, p.hex(p.warning)).FontSize(12)
 			ui.Text(c, "录制中 "+st.filename+" ("+formatBytes(st.size)+")").
 				FontSize(12).TextColor(p.hex(p.warning))
+		})
+	}
+	// Disconnected banner for a retained port (see onPorts):
+	// the hardware is gone but the window stays, history kept.
+	// The banner is only a sign: the pill's × is the only way
+	// the window goes away — the user closes it, never the app.
+	// Red, the existing disconnected/error color, not a new
+	// state vocabulary.
+	if info, ok := snap.ports[snap.selected]; ok && info.Gone {
+		ui.Row(c).Padding(2, 12).Gap(6).Children(func() {
+			dotIcon(c, p.hex(p.danger)).FontSize(12)
+			ui.Text(c, "已断开 · 硬件已拔出，历史保留").FontSize(12).TextColor(p.hex(p.danger))
 		})
 	}
 	// The terminal widget's backing is its own theme's

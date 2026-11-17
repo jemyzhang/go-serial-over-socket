@@ -88,9 +88,16 @@ func (p *portConn) Read(b []byte) (int, error) {
 }
 
 func (p *portConn) Write(b []byte) (int, error) {
-	if err := p.sender.WriteData(p.portID, string(b)); err != nil {
-		return 0, err
-	}
+	// Never report a send failure to the plugin: its input queue
+	// dies permanently on the first Write error — it closes the
+	// queue and its goroutine returns — so one failed keystroke
+	// while the hardware is gone (or the server is down) would
+	// silence the terminal forever, even after a re-plug, while
+	// the command bar (which calls sendSerial directly) keeps
+	// working. The failure is already surfaced where it can be
+	// acted on: sendSerial's error reaches deliverCommand's
+	// status line, and a keystroke just drops (see sendSerial).
+	_ = p.sender.WriteData(p.portID, string(b))
 	return len(b), nil
 }
 

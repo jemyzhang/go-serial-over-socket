@@ -128,7 +128,19 @@ of rounded shadowed containers). Status per area:
   switches, or broadcast reselection — only the pill body does;
   clicking a button performs only that button's action, never
   switches — mygo delivers a click to the deepest interactive
-  element. There is NO right-click menu on pills anymore: its
+  element. Drag a pill left or right to reorder the strip: each
+  pill is a Drag source for its port id, the strip is the single
+  Drop target, and the dragged port lands where the pointer
+  released — before the first pill whose center is right of it,
+  else at the end (mygo's Drag/Drop, probe-verified headless;
+  the drop position is read at Drop time via PointerPosition
+  against the pills' Bounds centers). A press that does not move
+  is still a click (the pill switches); a press that moves drags,
+  and dropping off the strip does nothing. The order is this
+  session's only — broadcasts keep it and new ports append at
+  the end — and the terminal windows follow it: the visible
+  terminal is the selected port, and Ctrl+Shift+Left/Right walks
+  the pills in this order. There is NO right-click menu on pills anymore: its
   connect/disconnect and settings items moved into the
   buttons. There is deliberately NO scroll container in the
   strip, so no scrollbar can ever appear: mygo v0.4.8 has no
@@ -139,6 +151,29 @@ of rounded shadowed containers). Status per area:
   path is visible in the pill tooltip. The command-palette
   placeholder button and its bottom status strip are deleted;
   the palette comes back only when it is really built.
+- **Unplug keeps the window**: when a port's hardware is
+  unplugged it vanishes from the server's ports broadcast, but
+  its window stays — terminal, scrollback and draft kept — until
+  the user closes it. The port is marked Gone (client-side only,
+  on `PortInfo`): red lamp by the existing disconnected rule,
+  power button disabled with a 硬件已拔出 tip, tooltip gains a
+  已断开 · 硬件已拔出 line, and the terminal pane shows a red
+  banner — 已断开 · 硬件已拔出，历史保留 — with no button; the
+  gone pill's × close button is the only way to close the window. The
+  close is the only way the window goes away, and it is final:
+  the session, draft and pill are dropped, the selection moves
+  to the first remaining port, and a later broadcast does not
+  resurrect it. While gone, sends are blocked: `sendSerial`
+  returns a 已断开 error without writing, buffering or
+  auto-connecting (so terminal keystrokes drop too — every
+  write goes through `sendSerial`), the command bar reports
+  发送失败 in the status line, and connect/disconnect requests
+  are not sent. Re-plug restores the window: the port reappears
+  in the broadcast, Gone clears, and the same resident session
+  comes back — history intact, no new window. Recording still
+  stops on disconnect as before, and a retained port's pending
+  send buffer behaves like any disconnected port's (only the
+  auto-connect flag clears, the bytes stay for the retry).
 - **Status is the lamp's color, never text**: no toolbar text
   anywhere shows 已连接/未连接/连接中, and neither do status
   messages (initial status is 就绪, service connect reports
