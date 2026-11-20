@@ -524,6 +524,28 @@ of rounded shadowed containers). Status per area:
   XOFF (the PR #14 rule). The old Ctrl+S raw 1 MiB snapshot
   save is removed: the merged action saves rendered text only,
   and the port Conn no longer keeps a snapshot buffer.
+- **Keyboard shortcuts** (all window-wide, from render's frame
+  `Shortcut` — whoever queries a delivered key first consumes
+  it, so a shortcut never leaks into a terminal or the serial
+  line; the same list shows in the help overlay, Ctrl+Shift+?):
+  Ctrl+Shift+Enter 开关本地终端 (on the saved split layout,
+  same as the toolbar + button); Ctrl+Shift+L 放大 / 恢复当前终端
+  (the focused pane fills the terminal area, the other pane
+  hides; silent no-op with a single pane; the size change
+  reports to the server through the existing resize path);
+  Ctrl+Shift+K 清空当前终端屏幕 (feeds the terminfo clear
+  sequence to the display only — nothing reaches the device or
+  the shell — and the scrollback stays, unlike `ClearScreen`,
+  which also erases it; a full-screen program's screen is left
+  alone); Ctrl+Shift+? 打开快捷键帮助 (a dimmed window with the
+  list on a centered card; any key closes it and never leaks,
+  clicks do not close it); Ctrl+Shift+[ / ] 焦点移到左 / 右边的终端
+  (the first / second pane; above / below in the stacked layout,
+  a silent no-op with a single pane or when already there);
+  Ctrl+, 打开 / 关闭设置;
+  Ctrl+Shift+←/→ 切换到上一个 / 下一个串口;
+  Ctrl+Shift+F 在当前终端中查找; Ctrl+S 保存当前串口输出;
+  Ctrl+Shift+C 复制选中内容; Esc 关闭设置面板 / 查找栏 / 帮助.
 
 
 ### Approximate (deliberate, noted in code)

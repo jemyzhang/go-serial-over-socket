@@ -105,32 +105,86 @@ func formatBytes(n int64) string {
 // covered, and the panel's size never changes with its content.
 // Add-port is the only modal left; history editing is inline.
 func (a *nativeApp) render(c *ui.Context) {
-	// Ctrl+, toggles settings wherever the focus is, unless a
-	// focused element handled the key first; the terminal's OnKey
-	// covers the terminal-focused case (see ensureTerm).
-	if c.Shortcut(ui.Ctrl, ui.KeyComma) {
-		a.toggleSettings()
-	}
-	// Ctrl+Shift+Left/Right switches the visible terminal to the
-	// adjacent port wherever the focus is, unless a focused
-	// element handled the key first; the terminal's OnKey covers
-	// the terminal-focused case (see terminalKeyHandled). Whoever
-	// queries a delivered key first consumes it, so the two
-	// levels never both fire.
-	if c.Shortcut(ui.Ctrl|ui.Shift, ui.KeyLeft) {
-		a.selectAdjacentPort(-1)
-	}
-	if c.Shortcut(ui.Ctrl|ui.Shift, ui.KeyRight) {
-		a.selectAdjacentPort(1)
-	}
-	// Ctrl+Shift+F opens the find bar on the focused terminal
-	// pane (Ghostty's Linux find key; Ctrl+F would steal the
-	// serial ^F and the shell's forward-char). The Shortcut
-	// claims the key window-wide, so the terminal never sees it:
-	// the plugin binds no find key, and an unclaimed key would
-	// reach the serial line or the shell as text.
-	if c.Shortcut(ui.Ctrl|ui.Shift, ui.KeyF) {
-		a.openFindBar()
+	// The window-wide shortcuts (see shortcuts.go): whoever
+	// queries a delivered key first consumes it, so the render
+	// layer runs before the command bar and the panels are
+	// built, and a shortcut never leaks into a terminal or the
+	// serial line — the same pattern as Ctrl+Shift+F. While the
+	// help overlay is open, every one of them only closes the
+	// overlay (the overlay's own HandleInput catches the rest),
+	// so a key pressed to dismiss help never reaches its action.
+	// Each query runs in both branches, so the registrations
+	// stay identical frame to frame.
+	if a.helpOpen {
+		close := c.Shortcut(ui.Ctrl, ui.KeyComma)
+		close = c.Shortcut(ui.Ctrl|ui.Shift, ui.KeyLeft) || close
+		close = c.Shortcut(ui.Ctrl|ui.Shift, ui.KeyRight) || close
+		close = c.Shortcut(ui.Ctrl|ui.Shift, ui.KeyF) || close
+		close = c.Shortcut(ui.Ctrl|ui.Shift, ui.KeyEnter) || close
+		close = c.Shortcut(ui.Ctrl|ui.Shift, ui.KeyL) || close
+		close = c.Shortcut(ui.Ctrl|ui.Shift, ui.KeyK) || close
+		close = c.Shortcut(ui.Ctrl|ui.Shift, ui.KeySlash) || close
+		close = c.Shortcut(ui.Ctrl|ui.Shift, ui.KeyBracketLeft) || close
+		close = c.Shortcut(ui.Ctrl|ui.Shift, ui.KeyBracketRight) || close
+		close = c.Shortcut(0, ui.KeyEscape) || close
+		if close {
+			a.closeHelp()
+		}
+	} else {
+		// Ctrl+, toggles settings wherever the focus is, unless a
+		// focused element handled the key first; the terminal's OnKey
+		// covers the terminal-focused case (see ensureTerm).
+		if c.Shortcut(ui.Ctrl, ui.KeyComma) {
+			a.toggleSettings()
+		}
+		// Ctrl+Shift+Left/Right switches the visible terminal to the
+		// adjacent port wherever the focus is, unless a focused
+		// element handled the key first; the terminal's OnKey covers
+		// the terminal-focused case (see terminalKeyHandled). Whoever
+		// queries a delivered key first consumes it, so the two
+		// levels never both fire.
+		if c.Shortcut(ui.Ctrl|ui.Shift, ui.KeyLeft) {
+			a.selectAdjacentPort(-1)
+		}
+		if c.Shortcut(ui.Ctrl|ui.Shift, ui.KeyRight) {
+			a.selectAdjacentPort(1)
+		}
+		// Ctrl+Shift+F opens the find bar on the focused terminal
+		// pane (Ghostty's Linux find key; Ctrl+F would steal the
+		// serial ^F and the shell's forward-char). The Shortcut
+		// claims the key window-wide, so the terminal never sees it:
+		// the plugin binds no find key, and an unclaimed key would
+		// reach the serial line or the shell as text.
+		if c.Shortcut(ui.Ctrl|ui.Shift, ui.KeyF) {
+			a.openFindBar()
+		}
+		// Ctrl+Shift+Enter toggles the local terminal (open on
+		// the saved split layout, close when open).
+		if c.Shortcut(ui.Ctrl|ui.Shift, ui.KeyEnter) {
+			a.toggleLocalTerminal()
+		}
+		// Ctrl+Shift+L grows the focused terminal pane to the
+		// full terminal area, and back.
+		if c.Shortcut(ui.Ctrl|ui.Shift, ui.KeyL) {
+			a.toggleZoom()
+		}
+		// Ctrl+Shift+K clears the focused terminal pane's screen.
+		if c.Shortcut(ui.Ctrl|ui.Shift, ui.KeyK) {
+			a.clearFocusedPane()
+		}
+		// Ctrl+Shift+? opens the shortcut help overlay.
+		if c.Shortcut(ui.Ctrl|ui.Shift, ui.KeySlash) {
+			a.openHelp()
+		}
+		// Ctrl+Shift+[ / ] moves the focus to the first /
+		// second terminal pane: left / right side by side,
+		// above / below stacked.
+		if c.Shortcut(ui.Ctrl|ui.Shift, ui.KeyBracketLeft) {
+			a.focusPane(findPaneSerial)
+		}
+		if c.Shortcut(ui.Ctrl|ui.Shift, ui.KeyBracketRight) {
+			a.focusPane(findPaneLocal)
+		}
 	}
 	snap := a.snapshot()
 	// The widget theme defaults to the OS appearance, but the app
@@ -195,6 +249,12 @@ func (a *nativeApp) render(c *ui.Context) {
 			})
 		})
 	})
+	// The shortcut help overlay (Ctrl+Shift+?): a dimmed window
+	// with the shortcut list on a centered card, above the rest
+	// of the UI. Any key closes it; clicks do not.
+	if a.helpOpen {
+		a.helpOverlay(c, p)
+	}
 	// Any panel close path (Escape, ×) drops un-saved staging
 	// edits across all sections.
 	if wasOpen && !a.settingsOpen {
@@ -618,23 +678,36 @@ func (a *nativeApp) terminalView(c *ui.Context, snap snapshot, p palette) {
 			// visible even when the selected port is gone
 			// (unplugged) — full-width then, split otherwise.
 			if sess, ok := snap.terms[snap.selected]; ok && snap.selected != "" {
-				// Split: serial first, local second, on the
-				// framework's draggable Split (SplitPercent
-				// side by side, SplitVerticalPercent stacked).
-				// The divider is the framework's own 1 DIP
-				// line: drag it to resize, or focus it and use
-				// the arrow keys. a.splitPercent is bound live,
-				// so dragging writes here directly. A zero
-				// value (e.g. a test-built app) reads as 50.
-				if a.splitPercent <= 0 || a.splitPercent > 100 {
-					a.splitPercent = defaultSplitPercent
-				}
-				first := func() { a.serialPaneView(c, snap, p, sess, focusTerm) }
-				second := func() { a.localPaneView(c, snap, p, snap.localTerm, focusLocal, true) }
-				if a.splitLayout == splitLayoutBelow {
-					ui.SplitVerticalPercent(c, &a.splitPercent, first, second).Fill()
+				// Zoomed (Ctrl+Shift+L): only the zoomed pane
+				// shows, at the full terminal area; the other
+				// pane is not built, so its terminal keeps its
+				// size and the focused pane's growth reports
+				// through the normal resize path.
+				if a.paneZoomed {
+					if a.zoomedPane == findPaneLocal {
+						a.localPaneView(c, snap, p, snap.localTerm, focusLocal, false)
+					} else {
+						a.serialPaneView(c, snap, p, sess, focusTerm)
+					}
 				} else {
-					ui.SplitPercent(c, &a.splitPercent, first, second).Fill()
+					// Split: serial first, local second, on the
+					// framework's draggable Split (SplitPercent
+					// side by side, SplitVerticalPercent stacked).
+					// The divider is the framework's own 1 DIP
+					// line: drag it to resize, or focus it and use
+					// the arrow keys. a.splitPercent is bound live,
+					// so dragging writes here directly. A zero
+					// value (e.g. a test-built app) reads as 50.
+					if a.splitPercent <= 0 || a.splitPercent > 100 {
+						a.splitPercent = defaultSplitPercent
+					}
+					first := func() { a.serialPaneView(c, snap, p, sess, focusTerm) }
+					second := func() { a.localPaneView(c, snap, p, snap.localTerm, focusLocal, true) }
+					if a.splitLayout == splitLayoutBelow {
+						ui.SplitVerticalPercent(c, &a.splitPercent, first, second).Fill()
+					} else {
+						ui.SplitPercent(c, &a.splitPercent, first, second).Fill()
+					}
 				}
 			} else {
 				a.localPaneView(c, snap, p, snap.localTerm, focusLocal, false)

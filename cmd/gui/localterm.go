@@ -262,6 +262,9 @@ func (a *nativeApp) closeLocalTerminal() {
 	// but the dragged position must survive in the settings
 	// struct for the next save (and the next open).
 	a.syncSplitSettings()
+	// A zoomed pane cannot outlive the split: closing the local
+	// terminal drops the zoom, so a later open starts split.
+	a.paneZoomed = false
 	// The local find bar belongs to this terminal: end its
 	// search and hide it (the next local terminal starts
 	// without one).

@@ -174,6 +174,17 @@ type nativeApp struct {
 	// them for saving (see syncSplitSettings).
 	splitLayout  string
 	splitPercent float32
+	// paneZoomed / zoomedPane are the Ctrl+Shift+L zoom: one
+	// pane at full terminal-area size (zoomedPane is
+	// findPaneSerial | findPaneLocal, valid only while
+	// paneZoomed). UI thread only.
+	paneZoomed bool
+	zoomedPane int
+	// helpOpen is the Ctrl+Shift+? shortcut help overlay;
+	// helpFocusPending asks its next render to take the keyboard
+	// focus, mirroring termFocusPending. UI thread only.
+	helpOpen         bool
+	helpFocusPending bool
 	// lastSizeCols / lastSizeRows are the last serial size
 	// reported to the server (0,0 = none yet). mu-guarded:
 	// onSerialResize runs on the plugin's tellConn goroutine.
